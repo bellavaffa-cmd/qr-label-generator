@@ -138,6 +138,40 @@
     font-size: 16px;
     line-height: 1;
   }
+  .settings-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 12px 0;
+  }
+  .settings-section-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .settings-qr {
+    width: 100px;
+    height: 100px;
+    margin: 0 auto 8px;
+    padding: 6px;
+    background: #fff;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .settings-qr img, .settings-qr canvas {
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+  }
+  .settings-url {
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    word-break: break-all;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+  }
   /* Fixed (not a panel descendant) so it stays visible/clickable even when the panel is hidden.
      Positioned in place of the old subtitle text, directly under the "QR Label Generator" title
      (panel padding is 24px, matching the title's left edge), then jumps to the top-left corner
@@ -433,6 +467,10 @@
             <span>Appearance</span>
             <button type="button" id="themeToggle" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
           </div>
+          <div class="settings-divider"></div>
+          <div class="settings-section-label">Share this app</div>
+          <div id="settingsQr" class="settings-qr"></div>
+          <div class="settings-url" id="settingsUrlText"></div>
         </div>
       </div>
     </div>
@@ -771,9 +809,30 @@
   });
   setPreviewMode(false);
 
-  // --- Settings dropdown (currently just holds the appearance/theme toggle) ---
+  // --- Settings dropdown (appearance toggle + a QR code linking back to this webapp) ---
   const settingsBtn = document.getElementById('settingsBtn');
   const settingsPanel = document.getElementById('settingsPanel');
+  const settingsQr = document.getElementById('settingsQr');
+  const settingsUrlText = document.getElementById('settingsUrlText');
+
+  // The app's own URL, without query string or hash, so it always encodes a clean link
+  // regardless of what the user was doing when they opened Settings.
+  const appUrl = window.location.origin + window.location.pathname;
+  settingsUrlText.textContent = appUrl;
+  new QRCode(settingsQr, {
+    text: appUrl,
+    width: 300,
+    height: 300,
+    colorDark: '#000000',
+    colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.M
+  });
+  requestAnimationFrame(() => {
+    settingsQr.querySelectorAll('canvas, img').forEach(el => {
+      el.style.width = '100%';
+      el.style.height = '100%';
+    });
+  });
 
   settingsBtn.addEventListener('click', (e) => {
     settingsPanel.hidden = !settingsPanel.hidden;

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'qr-label-app-v9';
+const CACHE_NAME = 'qr-label-app-v10';
 const APP_SHELL = [
   './',
   './index.html',
