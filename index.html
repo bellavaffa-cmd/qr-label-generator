@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR Label Generator</title>
+<meta name="description" content="Generate a QR code and print it on a 100 x 150 mm label.">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="QR Label">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<script src="vendor/qrcode.min.js"></script>
+<style id="pageSizeStyle">@page { size: 100mm 150mm; margin: 0; }</style>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --border: #d8dbe0;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --input-bg: #ffffff;
+    --button-bg: #ffffff;
+    --button-hover: #f0f1f3;
+    --shadow: rgba(0,0,0,0.12);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17181c;
+      --panel: #1f2126;
+      --border: #34363c;
+      --text: #e7e8ea;
+      --muted: #9aa0a8;
+      --accent: #4f8cff;
+      --accent-hover: #6d9fff;
+      --input-bg: #26282e;
+      --button-bg: #26282e;
+      --button-hover: #2e3138;
+      --shadow: rgba(0,0,0,0.4);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17181c;
+    --panel: #1f2126;
+    --border: #34363c;
+    --text: #e7e8ea;
+    --muted: #9aa0a8;
+    --accent: #4f8cff;
+    --accent-hover: #6d9fff;
+    --input-bg: #26282e;
+    --button-bg: #26282e;
+    --button-hover: #2e3138;
+    --shadow: rgba(0,0,0,0.4);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .app {
+    display: flex;
+    min-height: 100vh;
+  }
+  .panel {
+    width: 360px;
+    flex-shrink: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 24px;
+    overflow-y: auto;
+  }
+  .panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .panel h1 {
+    font-size: 18px;
+    margin: 0 0 44px;
+  }
+  #settingsBtn {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-size: 16px;
+    line-height: 1;
+  }
+  .panel-head-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .settings-dropdown {
+    position: absolute;
+    top: 44px;
+    right: 0;
+    z-index: 50;
+    min-width: 200px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 4px 16px var(--shadow);
+  }
+  .settings-dropdown[hidden] { display: none; }
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .settings-row #themeToggle {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-size: 16px;
+    line-height: 1;
+  }
+  /* Fixed (not a panel descendant) so it stays visible/clickable even when the panel is hidden.
+     Positioned in place of the old subtitle text, directly under the "QR Label Generator" title
+     (panel padding is 24px, matching the title's left edge), then jumps to the top-left corner
+     once the panel is hidden and that spot no longer exists. */
+  #panelToggleBtn {
+    position: fixed;
+    top: 56px;
+    left: 24px;
+    z-index: 1000;
+    background: var(--panel);
+    box-shadow: 0 2px 10px var(--shadow);
+  }
+  body.preview-mode #panelToggleBtn {
+    top: 16px;
+    left: 16px;
+  }
+  body.preview-mode .panel { display: none; }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin: 18px 0 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab-btn {
+    border: none;
+    background: none;
+    padding: 8px 4px 10px;
+    margin-right: 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+  }
+  .tab-btn:hover { background: none; color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-panel[hidden] { display: none; }
+
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 16px 0 6px;
+  }
+  label:first-of-type { margin-top: 0; }
+  input[type="text"], input[type="number"], textarea, select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    background: var(--input-bg);
+    color: var(--text);
+  }
+  textarea { resize: vertical; min-height: 60px; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  #orientationToggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  #orientationToggle .orient-icon {
+    width: 16px;
+    height: 16px;
+    border: 2px solid currentColor;
+    border-radius: 2px;
+    flex-shrink: 0;
+    transition: width 0.15s, height 0.15s;
+  }
+  #orientationToggle.is-landscape .orient-icon {
+    width: 20px;
+    height: 13px;
+  }
+  #orientationToggle:not(.is-landscape) .orient-icon {
+    width: 13px;
+    height: 20px;
+  }
+  .actions {
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  button {
+    padding: 10px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--button-bg);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  button.primary:hover { background: var(--accent-hover); }
+  button:hover { background: var(--button-hover); }
+
+  .stage {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px;
+    overflow: auto;
+  }
+
+  /* Label is rendered at real physical size using mm units, its width/height/--label-min set via JS
+     from the selected paper size and orientation. It always stays white/black in both themes, since
+     it's a preview of a physical printed label. */
+  .label-wrap {
+    background: #fff;
+    box-shadow: 0 2px 10px var(--shadow);
+  }
+  .label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(3mm, calc(var(--label-min, 100mm) * 0.08), 14mm);
+    text-align: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #fff;
+    color: #000;
+  }
+  .label .title {
+    font-size: clamp(3mm, calc(var(--label-min, 100mm) * 0.09), 14mm);
+    font-weight: 700;
+    margin-bottom: 4mm;
+    word-break: break-word;
+  }
+  .label .qr-canvas {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    min-height: 10mm;
+  }
+  .label .qr-box {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: move;
+    touch-action: none;
+    user-select: none;
+  }
+  .label.editing .qr-box {
+    outline: 1px dashed rgba(37, 99, 235, 0.6);
+    outline-offset: 3px;
+  }
+  .label .qr-box.dragging { cursor: grabbing; }
+  .label .qr-content {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .label .qr-content img, .label .qr-content canvas {
+    image-rendering: pixelated;
+  }
+  .qr-resize-handle {
+    position: absolute;
+    right: -6px;
+    bottom: -6px;
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: nwse-resize;
+    touch-action: none;
+    display: none;
+  }
+  .label.editing .qr-resize-handle { display: block; }
+
+  .label .subtitle-box {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: move;
+    touch-action: none;
+    user-select: none;
+  }
+  .label.editing .subtitle-box {
+    outline: 1px dashed rgba(37, 99, 235, 0.6);
+    outline-offset: 3px;
+  }
+  .label .subtitle-box.dragging { cursor: grabbing; }
+  .label .subtitle {
+    color: #333;
+    word-break: break-word;
+    white-space: nowrap;
+    padding: 2px 4px;
+  }
+  .subtitle-resize-handle {
+    position: absolute;
+    right: -6px;
+    bottom: -6px;
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: nwse-resize;
+    touch-action: none;
+    display: none;
+  }
+  .label.editing .subtitle-resize-handle { display: block; }
+  .label .code-text {
+    font-size: clamp(2mm, calc(var(--label-min, 100mm) * 0.045), 6mm);
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    color: #555;
+    margin-top: 2mm;
+    word-break: break-all;
+  }
+
+  .saved-list { display: flex; flex-direction: column; gap: 10px; }
+  .saved-empty { font-size: 13px; color: var(--muted); }
+  .saved-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .saved-item-info { min-width: 0; }
+  .saved-item-title {
+    font-size: 13px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .saved-item-content {
+    font-size: 12px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+  .saved-item-meta {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .saved-item-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .saved-item-actions button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  @media print {
+    body, html { margin: 0; padding: 0; background: #fff; }
+    .panel, .stage-toolbar, #panelToggleBtn { display: none !important; }
+    .stage { padding: 0; display: block; }
+    .label-wrap { box-shadow: none; }
+    .label { page-break-after: always; }
+    .qr-resize-handle, .subtitle-resize-handle { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<button type="button" id="panelToggleBtn" title="Show or hide the input panel">Hide</button>
+<div class="app">
+  <div class="panel">
+    <div class="panel-head">
+      <div>
+        <h1>QR Label Generator</h1>
+      </div>
+      <div class="panel-head-actions">
+        <button type="button" id="settingsBtn" title="Settings" aria-label="Settings">⚙️</button>
+        <div id="settingsPanel" class="settings-dropdown" hidden>
+          <div class="settings-row">
+            <span>Appearance</span>
+            <button type="button" id="themeToggle" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button type="button" class="tab-btn active" data-tab="create">Create</button>
+      <button type="button" class="tab-btn" data-tab="saved">Saved</button>
+    </div>
+
+    <div id="createTab" class="tab-panel">
+      <label for="data">QR content (URL, text, ID&hellip;)</label>
+      <textarea id="data" placeholder="https://example.com/item/12345">https://example.com</textarea>
+
+      <label for="title">Label title (optional)</label>
+      <input type="text" id="title" placeholder="e.g. Product name" value="">
+
+      <label for="subtitle">Subtitle (optional)</label>
+      <input type="text" id="subtitle" placeholder="e.g. Batch / location" value="">
+
+      <label>
+        <input type="checkbox" id="showCode" checked style="width:auto; display:inline; vertical-align:middle; margin-right:6px;">
+        Show content as text under QR code
+      </label>
+
+      <label for="paperSize">Paper / label size</label>
+      <select id="paperSize">
+        <option value="100x150" selected>100 &times; 150 mm (4&times;6&Prime; shipping label)</option>
+        <option value="100x100">100 &times; 100 mm (square label)</option>
+        <option value="62x100">62 &times; 100 mm (thermal label)</option>
+        <option value="50x25">50 &times; 25 mm (small label)</option>
+        <option value="a4">A4 (210 &times; 297 mm)</option>
+        <option value="a5">A5 (148 &times; 210 mm)</option>
+        <option value="a6">A6 (105 &times; 148 mm)</option>
+        <option value="letter">Letter (215.9 &times; 279.4 mm)</option>
+        <option value="custom">Custom size&hellip;</option>
+      </select>
+
+      <div class="row" id="customSizeRow" style="display:none;">
+        <div>
+          <label for="customWidth">Width (mm)</label>
+          <input type="number" id="customWidth" min="10" max="1000" step="0.1" value="100">
+        </div>
+        <div>
+          <label for="customHeight">Height (mm)</label>
+          <input type="number" id="customHeight" min="10" max="1000" step="0.1" value="150">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Orientation</label>
+          <button type="button" id="orientationToggle"><span class="orient-icon"></span><span id="orientationLabel">Portrait</span></button>
+        </div>
+        <div>
+          <label for="ecLevel">Error correction</label>
+          <select id="ecLevel">
+            <option value="L">Low (L)</option>
+            <option value="M" selected>Medium (M)</option>
+            <option value="Q">Quartile (Q)</option>
+            <option value="H">High (H)</option>
+          </select>
+        </div>
+      </div>
+
+      <label for="qrSize">QR size: <span id="qrSizeLabel">70</span> mm</label>
+      <input type="range" id="qrSize" min="30" max="90" value="70" step="1" style="width:100%;">
+
+      <div class="actions">
+        <button id="saveBtn">Save for later</button>
+        <button class="primary" id="printBtn">Print label</button>
+        <button id="downloadBtn">Download as PNG</button>
+      </div>
+      <p class="hint" id="printHint">Print dialog: set paper size to 100&times;150&nbsp;mm (or your label stock), scale 100%, margins none.</p>
+    </div>
+
+    <div id="savedTab" class="tab-panel" hidden>
+      <div id="savedList" class="saved-list"></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="label-wrap">
+      <div class="label" id="label">
+        <div class="title" id="titleOut"></div>
+        <div class="qr-canvas" id="qrCanvas">
+          <div class="qr-box" id="qrBox">
+            <div class="qr-content" id="qrContent"></div>
+            <div class="qr-resize-handle" id="qrResizeHandle" title="Drag to resize"></div>
+          </div>
+          <div class="subtitle-box" id="subtitleBox">
+            <div class="subtitle" id="subtitleOut"></div>
+            <div class="subtitle-resize-handle" id="subtitleResizeHandle" title="Drag to resize"></div>
+          </div>
+        </div>
+        <div class="code-text" id="codeOut"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Theme: respects saved preference, otherwise follows the OS via prefers-color-scheme (CSS handles that part).
+  const themeToggle = document.getElementById('themeToggle');
+  const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+  const THEME_KEY = 'qr-label-app-theme';
+
+  function applyTheme(theme) {
+    if (theme === 'dark' || theme === 'light') {
+      document.documentElement.setAttribute('data-theme', theme);
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+    const isDark = theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    themeToggle.textContent = isDark ? '☀️' : '🌙';
+    themeColorMeta.setAttribute('content', isDark ? '#17181c' : '#2563eb');
+  }
+
+  applyTheme(localStorage.getItem(THEME_KEY));
+
+  themeToggle.addEventListener('click', () => {
+    const current = localStorage.getItem(THEME_KEY) ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    localStorage.setItem(THEME_KEY, next);
+    applyTheme(next);
+  });
+
+  const PAPER_SIZES = {
+    '100x150': { label: '100 × 150 mm', w: 100, h: 150 },
+    '100x100': { label: '100 × 100 mm', w: 100, h: 100 },
+    '62x100':  { label: '62 × 100 mm', w: 62, h: 100 },
+    '50x25':   { label: '50 × 25 mm', w: 50, h: 25 },
+    'a4':      { label: 'A4', w: 210, h: 297 },
+    'a5':      { label: 'A5', w: 148, h: 210 },
+    'a6':      { label: 'A6', w: 105, h: 148 },
+    'letter':  { label: 'Letter', w: 215.9, h: 279.4 }
+  };
+
+  const dataEl = document.getElementById('data');
+  const titleEl = document.getElementById('title');
+  const subtitleEl = document.getElementById('subtitle');
+  const showCodeEl = document.getElementById('showCode');
+  const paperSizeEl = document.getElementById('paperSize');
+  const customSizeRow = document.getElementById('customSizeRow');
+  const customWidthEl = document.getElementById('customWidth');
+  const customHeightEl = document.getElementById('customHeight');
+  const orientationToggle = document.getElementById('orientationToggle');
+  const orientationLabel = document.getElementById('orientationLabel');
+  const ecLevelEl = document.getElementById('ecLevel');
+  const qrSizeEl = document.getElementById('qrSize');
+  const qrSizeLabel = document.getElementById('qrSizeLabel');
+  const printHint = document.getElementById('printHint');
+  const pageSizeStyle = document.getElementById('pageSizeStyle');
+
+  const labelEl = document.getElementById('label');
+  const titleOut = document.getElementById('titleOut');
+  const subtitleOut = document.getElementById('subtitleOut');
+  const codeOut = document.getElementById('codeOut');
+  const qrCanvas = document.getElementById('qrCanvas');
+  const qrBox = document.getElementById('qrBox');
+  const qrContent = document.getElementById('qrContent');
+  const qrResizeHandle = document.getElementById('qrResizeHandle');
+  const subtitleBox = document.getElementById('subtitleBox');
+  const subtitleResizeHandle = document.getElementById('subtitleResizeHandle');
+
+  let orientation = 'portrait';
+  // Offset of each box's center from the qr-canvas center, in mm. (0,0) = centered.
+  const qrOffset = { x: 0, y: 0 };
+  // Starts pinned toward the bottom of the canvas (a large y clamps down to the max on first render).
+  const subtitleOffset = { x: 0, y: 9999 };
+  let subtitleSizeMm = null; // lazily defaulted on first render based on label size
+
+  // mm -> px conversion for the qrcode.js canvas (it renders in CSS px, we size the box in mm via CSS)
+  const MM_TO_PX = 96 / 25.4; // assume 96dpi CSS reference; actual print uses the mm box size regardless of px used for rendering resolution
+  let qrInstance = null;
+
+  function getBaseDims() {
+    let a, b;
+    if (paperSizeEl.value === 'custom') {
+      a = parseFloat(customWidthEl.value) || 100;
+      b = parseFloat(customHeightEl.value) || 150;
+    } else {
+      const p = PAPER_SIZES[paperSizeEl.value] || PAPER_SIZES['100x150'];
+      a = p.w;
+      b = p.h;
+    }
+    // Normalize to portrait canonical (w <= h); orientation swaps it back if needed.
+    return { w: Math.min(a, b), h: Math.max(a, b) };
+  }
+
+  function getDisplayDims() {
+    const { w, h } = getBaseDims();
+    return orientation === 'landscape' ? { w: h, h: w } : { w, h };
+  }
+
+  function updateOrientationUi() {
+    orientationToggle.classList.toggle('is-landscape', orientation === 'landscape');
+    orientationLabel.textContent = orientation === 'landscape' ? 'Landscape' : 'Portrait';
+  }
+
+  function render() {
+    const text = dataEl.value.trim() || ' ';
+
+    customSizeRow.style.display = paperSizeEl.value === 'custom' ? 'flex' : 'none';
+
+    const { w: widthMm, h: heightMm } = getDisplayDims();
+    const minDim = Math.min(widthMm, heightMm);
+
+    labelEl.style.width = widthMm + 'mm';
+    labelEl.style.height = heightMm + 'mm';
+    labelEl.style.setProperty('--label-min', minDim + 'mm');
+
+    pageSizeStyle.textContent = `@page { size: ${widthMm}mm ${heightMm}mm; margin: 0; }`;
+    printHint.innerHTML = `Print dialog: set paper size to ${widthMm}&times;${heightMm}&nbsp;mm (or your label stock), scale 100%, margins none.`;
+
+    // Keep the QR code within a sensible range of the smaller label dimension.
+    const maxQrMm = Math.max(10, Math.floor(minDim * 0.85));
+    qrSizeEl.max = maxQrMm;
+    qrSizeEl.min = Math.min(10, maxQrMm);
+    if (parseFloat(qrSizeEl.value) > maxQrMm) qrSizeEl.value = maxQrMm;
+
+    const sizeMm = parseInt(qrSizeEl.value, 10);
+    qrSizeLabel.textContent = sizeMm;
+    const sizePx = Math.round(sizeMm * MM_TO_PX * 3); // render at higher pixel density for crisp printing, displayed at mm size via CSS
+
+    titleOut.textContent = titleEl.value.trim();
+    titleOut.style.display = titleEl.value.trim() ? '' : 'none';
+
+    const hasSubtitle = !!subtitleEl.value.trim();
+    subtitleOut.textContent = subtitleEl.value.trim();
+    subtitleBox.style.display = hasSubtitle ? '' : 'none';
+    if (subtitleSizeMm === null) subtitleSizeMm = clamp(minDim * 0.065, 2.4, 9);
+    subtitleOut.style.fontSize = subtitleSizeMm + 'mm';
+
+    codeOut.textContent = showCodeEl.checked ? text : '';
+    codeOut.style.display = showCodeEl.checked ? '' : 'none';
+
+    qrBox.style.width = sizeMm + 'mm';
+    qrBox.style.height = sizeMm + 'mm';
+    positionBox(qrBox, qrOffset, { w: sizeMm, h: sizeMm });
+    if (hasSubtitle) positionBox(subtitleBox, subtitleOffset);
+
+    qrContent.innerHTML = '';
+    const correctLevel = QRCode.CorrectLevel[ecLevelEl.value] ?? QRCode.CorrectLevel.M;
+
+    qrInstance = new QRCode(qrContent, {
+      text: text,
+      width: sizePx,
+      height: sizePx,
+      colorDark: '#000000',
+      colorLight: '#ffffff',
+      correctLevel: correctLevel
+    });
+
+    // qrcode.js renders a hidden <canvas> plus a visible <img>; size both so
+    // whichever is shown fills the mm-sized box regardless of native pixel size.
+    requestAnimationFrame(() => {
+      qrContent.querySelectorAll('canvas, img').forEach(el => {
+        el.style.width = '100%';
+        el.style.height = '100%';
+      });
+    });
+  }
+
+  function clamp(v, min, max) {
+    return Math.min(Math.max(v, min), max);
+  }
+
+  // Positions a draggable box within qr-canvas, honoring offset.x/offset.y (in mm, from canvas
+  // center) while clamping in place so the box never leaves the canvas bounds. Mutates `offset`
+  // with the clamped value so it becomes the new baseline for the next drag/render.
+  // sizeOverride: {w,h} in mm for boxes with a known fixed size (the QR); omitted for boxes that
+  // should just be measured as rendered (free-sized text like the subtitle).
+  function positionBox(box, offset, sizeOverride) {
+    const canvasRect = qrCanvas.getBoundingClientRect();
+    if (!canvasRect.width || !canvasRect.height) return;
+    const canvasWmm = canvasRect.width / MM_TO_PX;
+    const canvasHmm = canvasRect.height / MM_TO_PX;
+
+    let wMm, hMm;
+    if (sizeOverride) {
+      wMm = sizeOverride.w;
+      hMm = sizeOverride.h;
+    } else {
+      const boxRect = box.getBoundingClientRect();
+      wMm = boxRect.width / MM_TO_PX;
+      hMm = boxRect.height / MM_TO_PX;
+    }
+
+    const maxOffsetX = Math.max(0, (canvasWmm - wMm) / 2);
+    const maxOffsetY = Math.max(0, (canvasHmm - hMm) / 2);
+    offset.x = clamp(offset.x, -maxOffsetX, maxOffsetX);
+    offset.y = clamp(offset.y, -maxOffsetY, maxOffsetY);
+    const leftMm = (canvasWmm - wMm) / 2 + offset.x;
+    const topMm = (canvasHmm - hMm) / 2 + offset.y;
+    box.style.left = leftMm + 'mm';
+    box.style.top = topMm + 'mm';
+  }
+
+  [dataEl, titleEl, subtitleEl, showCodeEl, paperSizeEl, customWidthEl, customHeightEl, ecLevelEl, qrSizeEl].forEach(el => {
+    el.addEventListener('input', render);
+    el.addEventListener('change', render);
+  });
+
+  orientationToggle.addEventListener('click', () => {
+    orientation = orientation === 'landscape' ? 'portrait' : 'landscape';
+    updateOrientationUi();
+    render();
+  });
+  updateOrientationUi();
+
+  document.getElementById('printBtn').addEventListener('click', () => window.print());
+
+  document.getElementById('downloadBtn').addEventListener('click', () => {
+    const canvas = qrContent.querySelector('canvas');
+    if (!canvas) return;
+    const link = document.createElement('a');
+    link.download = 'qr-code.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+
+  // --- Preview mode: hides the input panel so the label can be viewed unobstructed.
+  // Single button, fixed top-right so it stays put whether the panel is shown or hidden;
+  // its label always reflects what clicking it will do next.
+  const panelToggleBtn = document.getElementById('panelToggleBtn');
+
+  function setPreviewMode(on) {
+    document.body.classList.toggle('preview-mode', on);
+    labelEl.classList.toggle('editing', !on);
+    panelToggleBtn.textContent = on ? 'Show' : 'Hide';
+  }
+
+  panelToggleBtn.addEventListener('click', () => {
+    setPreviewMode(!document.body.classList.contains('preview-mode'));
+  });
+  setPreviewMode(false);
+
+  // --- Settings dropdown (currently just holds the appearance/theme toggle) ---
+  const settingsBtn = document.getElementById('settingsBtn');
+  const settingsPanel = document.getElementById('settingsPanel');
+
+  settingsBtn.addEventListener('click', (e) => {
+    settingsPanel.hidden = !settingsPanel.hidden;
+    e.stopPropagation();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!settingsPanel.hidden && !settingsPanel.contains(e.target) && e.target !== settingsBtn) {
+      settingsPanel.hidden = true;
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !settingsPanel.hidden) settingsPanel.hidden = true;
+  });
+
+  // --- Move & resize the QR code and subtitle directly on the label ---
+  let dragState = null;
+
+  qrBox.addEventListener('pointerdown', (e) => {
+    if (e.target === qrResizeHandle || !labelEl.classList.contains('editing')) return;
+    dragState = { mode: 'move', target: 'qr', startX: e.clientX, startY: e.clientY, startOffsetX: qrOffset.x, startOffsetY: qrOffset.y };
+    qrBox.setPointerCapture(e.pointerId);
+    qrBox.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  qrResizeHandle.addEventListener('pointerdown', (e) => {
+    if (!labelEl.classList.contains('editing')) return;
+    dragState = { mode: 'resize', target: 'qr', startX: e.clientX, startY: e.clientY, startSizeMm: parseFloat(qrSizeEl.value) };
+    qrResizeHandle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  qrBox.addEventListener('dblclick', () => {
+    if (!labelEl.classList.contains('editing')) return;
+    qrOffset.x = 0;
+    qrOffset.y = 0;
+    render();
+  });
+
+  subtitleBox.addEventListener('pointerdown', (e) => {
+    if (e.target === subtitleResizeHandle || !labelEl.classList.contains('editing')) return;
+    dragState = { mode: 'move', target: 'subtitle', startX: e.clientX, startY: e.clientY, startOffsetX: subtitleOffset.x, startOffsetY: subtitleOffset.y };
+    subtitleBox.setPointerCapture(e.pointerId);
+    subtitleBox.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  subtitleResizeHandle.addEventListener('pointerdown', (e) => {
+    if (!labelEl.classList.contains('editing')) return;
+    dragState = { mode: 'resize', target: 'subtitle', startX: e.clientX, startY: e.clientY, startSizeMm: subtitleSizeMm };
+    subtitleResizeHandle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  subtitleBox.addEventListener('dblclick', () => {
+    if (!labelEl.classList.contains('editing')) return;
+    subtitleOffset.x = 0;
+    subtitleOffset.y = 0;
+    render();
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    if (!dragState) return;
+    const dxMm = (e.clientX - dragState.startX) / MM_TO_PX;
+    const dyMm = (e.clientY - dragState.startY) / MM_TO_PX;
+
+    if (dragState.mode === 'move' && dragState.target === 'qr') {
+      qrOffset.x = dragState.startOffsetX + dxMm;
+      qrOffset.y = dragState.startOffsetY + dyMm;
+      positionBox(qrBox, qrOffset, { w: parseFloat(qrSizeEl.value), h: parseFloat(qrSizeEl.value) });
+    } else if (dragState.mode === 'resize' && dragState.target === 'qr') {
+      const maxQrMm = parseFloat(qrSizeEl.max);
+      const minQrMm = parseFloat(qrSizeEl.min);
+      const newSizeMm = clamp(dragState.startSizeMm + (dxMm + dyMm) / 2, minQrMm, maxQrMm);
+      qrSizeEl.value = newSizeMm.toFixed(1);
+      qrSizeLabel.textContent = Math.round(newSizeMm);
+      qrBox.style.width = newSizeMm + 'mm';
+      qrBox.style.height = newSizeMm + 'mm';
+      positionBox(qrBox, qrOffset, { w: newSizeMm, h: newSizeMm });
+    } else if (dragState.mode === 'move' && dragState.target === 'subtitle') {
+      subtitleOffset.x = dragState.startOffsetX + dxMm;
+      subtitleOffset.y = dragState.startOffsetY + dyMm;
+      positionBox(subtitleBox, subtitleOffset);
+    } else if (dragState.mode === 'resize' && dragState.target === 'subtitle') {
+      subtitleSizeMm = clamp(dragState.startSizeMm + (dxMm + dyMm) / 2, 2, 40);
+      subtitleOut.style.fontSize = subtitleSizeMm + 'mm';
+      positionBox(subtitleBox, subtitleOffset);
+    }
+  });
+
+  window.addEventListener('pointerup', () => {
+    if (!dragState) return;
+    const wasQrResize = dragState.mode === 'resize' && dragState.target === 'qr';
+    dragState = null;
+    qrBox.classList.remove('dragging');
+    subtitleBox.classList.remove('dragging');
+    if (wasQrResize) render(); // regenerate the QR at the correct pixel density for the final size
+  });
+
+  // --- Tabs ---
+  document.querySelectorAll('.tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
+      document.getElementById('createTab').hidden = btn.dataset.tab !== 'create';
+      document.getElementById('savedTab').hidden = btn.dataset.tab !== 'saved';
+      if (btn.dataset.tab === 'saved') renderSavedList();
+    });
+  });
+
+  // --- Save for later ---
+  const SAVED_KEY = 'qr-label-app-saved-items';
+  const saveBtn = document.getElementById('saveBtn');
+  const savedList = document.getElementById('savedList');
+
+  function loadSavedItems() {
+    try {
+      return JSON.parse(localStorage.getItem(SAVED_KEY)) || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function persistSavedItems(items) {
+    localStorage.setItem(SAVED_KEY, JSON.stringify(items));
+  }
+
+  function currentFormState() {
+    return {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      content: dataEl.value,
+      title: titleEl.value,
+      subtitle: subtitleEl.value,
+      showCode: showCodeEl.checked,
+      paperSize: paperSizeEl.value,
+      customWidth: customWidthEl.value,
+      customHeight: customHeightEl.value,
+      orientation: orientation,
+      ecLevel: ecLevelEl.value,
+      qrSizeMm: qrSizeEl.value,
+      qrOffsetX: qrOffset.x,
+      qrOffsetY: qrOffset.y,
+      subtitleOffsetX: subtitleOffset.x,
+      subtitleOffsetY: subtitleOffset.y,
+      subtitleSizeMm: subtitleSizeMm,
+      savedAt: Date.now()
+    };
+  }
+
+  function applyFormState(item) {
+    dataEl.value = item.content || '';
+    titleEl.value = item.title || '';
+    subtitleEl.value = item.subtitle || '';
+    showCodeEl.checked = !!item.showCode;
+    paperSizeEl.value = PAPER_SIZES[item.paperSize] ? item.paperSize : (item.paperSize === 'custom' ? 'custom' : '100x150');
+    customWidthEl.value = item.customWidth || 100;
+    customHeightEl.value = item.customHeight || 150;
+    orientation = item.orientation === 'landscape' ? 'landscape' : 'portrait';
+    ecLevelEl.value = item.ecLevel || 'M';
+    qrSizeEl.value = item.qrSizeMm || 70;
+    qrOffset.x = typeof item.qrOffsetX === 'number' ? item.qrOffsetX : 0;
+    qrOffset.y = typeof item.qrOffsetY === 'number' ? item.qrOffsetY : 0;
+    subtitleOffset.x = typeof item.subtitleOffsetX === 'number' ? item.subtitleOffsetX : 0;
+    subtitleOffset.y = typeof item.subtitleOffsetY === 'number' ? item.subtitleOffsetY : 9999;
+    subtitleSizeMm = typeof item.subtitleSizeMm === 'number' ? item.subtitleSizeMm : null;
+    updateOrientationUi();
+    render();
+  }
+
+  function renderSavedList() {
+    const items = loadSavedItems();
+    if (!items.length) {
+      savedList.innerHTML = '<p class="saved-empty">No saved QR codes yet. Fill in the form on the Create tab and click "Save for later" to keep it here.</p>';
+      return;
+    }
+    savedList.innerHTML = '';
+    items.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'saved-item';
+
+      const info = document.createElement('div');
+      info.className = 'saved-item-info';
+
+      const title = document.createElement('div');
+      title.className = 'saved-item-title';
+      title.textContent = item.title && item.title.trim() ? item.title.trim() : '(untitled)';
+      info.appendChild(title);
+
+      const content = document.createElement('div');
+      content.className = 'saved-item-content';
+      content.textContent = item.content || '';
+      info.appendChild(content);
+
+      const meta = document.createElement('div');
+      meta.className = 'saved-item-meta';
+      meta.textContent = new Date(item.savedAt).toLocaleString();
+      info.appendChild(meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'saved-item-actions';
+
+      const useBtn = document.createElement('button');
+      useBtn.textContent = 'Use';
+      useBtn.addEventListener('click', () => {
+        applyFormState(item);
+        document.querySelector('.tab-btn[data-tab="create"]').click();
+      });
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.addEventListener('click', () => {
+        persistSavedItems(loadSavedItems().filter((i) => i.id !== item.id));
+        renderSavedList();
+      });
+
+      actions.appendChild(useBtn);
+      actions.appendChild(deleteBtn);
+
+      row.appendChild(info);
+      row.appendChild(actions);
+      savedList.appendChild(row);
+    });
+  }
+
+  saveBtn.addEventListener('click', () => {
+    const items = loadSavedItems();
+    items.unshift(currentFormState());
+    persistSavedItems(items);
+    const original = saveBtn.textContent;
+    saveBtn.textContent = 'Saved ✓';
+    setTimeout(() => { saveBtn.textContent = original; }, 1200);
+  });
+
+  render();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch((err) => {
+        console.warn('Service worker registration failed:', err);
+      });
+    });
+  }
+</script>
+</body>
+</html>
