@@ -995,19 +995,64 @@
   let codeReader = null;
   let scanHistory = [];
 
+  function decodeCallback(result, err) {
+    if (result) {
+      addScanResult(result.getText(), ZXing.BarcodeFormat[result.getBarcodeFormat()]);
+    } else if (err && !(err instanceof ZXing.NotFoundException)) {
+      console.warn('Scan error:', err);
+    }
+  }
+
+  function friendlyCameraError(err) {
+    switch (err.name) {
+      case 'NotAllowedError':
+      case 'PermissionDeniedError':
+        return 'Camera permission was denied. Allow camera access for this site in your browser settings and try again.';
+      case 'NotFoundError':
+      case 'DevicesNotFoundError':
+        return 'No camera found on this device.';
+      case 'NotReadableError':
+      case 'TrackStartError':
+        return 'The camera is already in use by another app.';
+      default:
+        return 'Camera error: ' + err.message;
+    }
+  }
+
+  // Populates the camera dropdown for manual switching. Only call this AFTER permission has
+  // been granted once — most mobile browsers (notably iOS Safari) return no usable device
+  // labels/ids from enumerateDevices() beforehand, so relying on it up front leaves phones
+  // stuck reporting "no camera found" without ever prompting for permission.
   async function populateCameraList() {
-    const devices = await codeReader.listVideoInputDevices();
-    scanCameraSelect.innerHTML = '';
-    devices.forEach((d, i) => {
-      const opt = document.createElement('option');
-      opt.value = d.deviceId;
-      opt.textContent = d.label || `Camera ${i + 1}`;
-      scanCameraSelect.appendChild(opt);
-    });
-    // Default to a rear/back camera when one is identifiable (typical on phones).
-    const back = devices.find((d) => /back|rear|environment/i.test(d.label));
-    if (back) scanCameraSelect.value = back.deviceId;
-    return devices;
+    try {
+      const devices = await codeReader.listVideoInputDevices();
+      const current = scanCameraSelect.value;
+      scanCameraSelect.innerHTML = '';
+      devices.forEach((d, i) => {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `Camera ${i + 1}`;
+        scanCameraSelect.appendChild(opt);
+      });
+      if (devices.some((d) => d.deviceId === current)) scanCameraSelect.value = current;
+    } catch (err) {
+      console.warn('Could not list cameras:', err);
+    }
+  }
+
+  // Starts decoding using either a specific camera (deviceId, e.g. from the dropdown) or,
+  // for the first run, a facingMode constraint preferring the rear camera — this triggers
+  // the permission prompt directly instead of depending on a pre-permission device list.
+  async function startDecoding(deviceIdOrConstraints) {
+    scanStartBtn.hidden = true;
+    scanStopBtn.hidden = false;
+    scanStatus.textContent = 'Scanning… point the camera at a barcode or QR code.';
+    if (typeof deviceIdOrConstraints === 'string') {
+      await codeReader.decodeFromVideoDevice(deviceIdOrConstraints, scanVideo, decodeCallback);
+    } else {
+      await codeReader.decodeFromConstraints({ video: deviceIdOrConstraints }, scanVideo, decodeCallback);
+    }
+    populateCameraList(); // now that permission is granted, labels/ids are available for the dropdown
   }
 
   async function startScan() {
@@ -1018,27 +1063,16 @@
     if (!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
     scanStatus.textContent = 'Requesting camera access…';
     try {
-      const devices = await populateCameraList();
-      if (!devices.length) {
-        scanStatus.textContent = 'No camera found on this device.';
-        return;
+      if (scanCameraSelect.value) {
+        await startDecoding(scanCameraSelect.value);
+      } else {
+        await startDecoding({ facingMode: { ideal: 'environment' } });
       }
-      const deviceId = scanCameraSelect.value || devices[0].deviceId;
-      scanStartBtn.hidden = true;
-      scanStopBtn.hidden = false;
-      scanStatus.textContent = 'Scanning… point the camera at a barcode or QR code.';
-      await codeReader.decodeFromVideoDevice(deviceId, scanVideo, (result, err) => {
-        if (result) {
-          addScanResult(result.getText(), ZXing.BarcodeFormat[result.getBarcodeFormat()]);
-        } else if (err && !(err instanceof ZXing.NotFoundException)) {
-          console.warn('Scan error:', err);
-        }
-      });
     } catch (err) {
       if (codeReader) codeReader.reset();
       scanStartBtn.hidden = false;
       scanStopBtn.hidden = true;
-      scanStatus.textContent = 'Camera error: ' + err.message;
+      scanStatus.textContent = friendlyCameraError(err);
     }
   }
 
