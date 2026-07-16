@@ -521,6 +521,10 @@
     min-width: 0;
     min-height: 0;
     padding: clamp(1mm, calc(var(--cell-min, 50mm) * 0.06), 4mm);
+    box-sizing: border-box;
+  }
+  .collage-cell.bordered {
+    border: 0.3mm dashed #999;
   }
   .collage-cell-title {
     font-weight: 700;
@@ -528,6 +532,13 @@
     word-break: break-word;
     font-size: clamp(2mm, calc(var(--cell-min, 50mm) * 0.09), 8mm);
     margin-bottom: 0.4em;
+  }
+  .collage-cell-qr-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    flex-shrink: 0;
   }
   .collage-cell-qr {
     display: flex;
@@ -733,6 +744,7 @@
     <div id="collageTab" class="tab-panel" hidden>
       <label for="collageEntries">Labels (one per line: content | title | subtitle)</label>
       <textarea id="collageEntries" placeholder="https://example.com/1|Item 1|Batch A&#10;https://example.com/2|Item 2|Batch A&#10;https://example.com/3"></textarea>
+      <p class="hint">For more than one QR code on a label, separate their contents with a semicolon, e.g. <code>https://a.example;https://b.example|Item 1</code></p>
 
       <label for="collageCellSize">Label size</label>
       <select id="collageCellSize">
@@ -801,6 +813,11 @@
       <label>
         <input type="checkbox" id="collageShowCode" style="width:auto; display:inline; vertical-align:middle; margin-right:6px;">
         Show content as text under each QR code
+      </label>
+
+      <label>
+        <input type="checkbox" id="collageShowBorders" checked style="width:auto; display:inline; vertical-align:middle; margin-right:6px;">
+        Show label borders (helpful for cutting)
       </label>
 
       <div class="actions">
@@ -1631,6 +1648,7 @@
   const collageGapEl = document.getElementById('collageGap');
   const collageGapLabelEl = document.getElementById('collageGapLabel');
   const collageShowCodeEl = document.getElementById('collageShowCode');
+  const collageShowBordersEl = document.getElementById('collageShowBorders');
   const collagePrintBtn = document.getElementById('collagePrintBtn');
   const collageHint = document.getElementById('collageHint');
   const collageSheetsContainer = document.getElementById('collageSheetsContainer');
@@ -1685,15 +1703,18 @@
   }
 
   // Each line is "content|title|subtitle" — title and subtitle are optional trailing parts.
+  // The content field itself may hold more than one QR code, separated by semicolons, so one
+  // label can carry multiple codes (e.g. a product page plus a separate warranty link).
   // Lines with no content at all (blank lines, or a line that's just "|something") are skipped.
   function parseCollageEntries() {
     return collageEntriesEl.value
       .split('\n')
       .map((line) => {
-        const [content, title, subtitle] = line.split('|').map((s) => (s || '').trim());
-        return { content: content || '', title: title || '', subtitle: subtitle || '' };
+        const [contentField, title, subtitle] = line.split('|').map((s) => (s || '').trim());
+        const contents = (contentField || '').split(';').map((s) => s.trim()).filter(Boolean);
+        return { contents, title: title || '', subtitle: subtitle || '' };
       })
-      .filter((e) => e.content);
+      .filter((e) => e.contents.length);
   }
 
   function computeCollageGrid(sheetWmm, sheetHmm, cellWmm, cellHmm, gapMm) {
@@ -1704,7 +1725,7 @@
 
   function buildCollageCell(entry, cellWmm, cellHmm) {
     const cell = document.createElement('div');
-    cell.className = 'collage-cell';
+    cell.className = 'collage-cell' + (collageShowBordersEl.checked ? ' bordered' : '');
 
     if (entry.title) {
       const t = document.createElement('div');
@@ -1713,40 +1734,60 @@
       cell.appendChild(t);
     }
 
-    const qrWrap = document.createElement('div');
-    qrWrap.className = 'collage-cell-qr';
-    const qrSizeMm = Math.max(5, Math.min(cellWmm, cellHmm) * 0.6);
-    qrWrap.style.width = qrSizeMm + 'mm';
-    qrWrap.style.height = qrSizeMm + 'mm';
-    const sizePx = Math.round(qrSizeMm * MM_TO_PX * 3); // higher pixel density for crisp printing
-    new QRCode(qrWrap, {
-      text: entry.content,
-      width: sizePx,
-      height: sizePx,
-      colorDark: '#000000',
-      colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M
-    });
-    cell.appendChild(qrWrap);
-    requestAnimationFrame(() => {
-      qrWrap.querySelectorAll('canvas, img').forEach((el) => {
-        el.style.width = '100%';
-        el.style.height = '100%';
+    // With more than one QR code, each gets its own column in a row, shrinking to fit N across.
+    const n = entry.contents.length;
+    const qrGapMm = 1.5;
+    const maxByWidth = ((cellWmm - qrGapMm * (n - 1)) / n) * 0.9;
+    const maxByHeight = cellHmm * 0.6;
+    const qrSizeMm = Math.max(4, Math.min(maxByWidth, maxByHeight));
+
+    const row = document.createElement('div');
+    row.className = 'collage-cell-qr-row';
+    row.style.gap = qrGapMm + 'mm';
+
+    entry.contents.forEach((content) => {
+      const col = document.createElement('div');
+      col.style.display = 'flex';
+      col.style.flexDirection = 'column';
+      col.style.alignItems = 'center';
+
+      const qrWrap = document.createElement('div');
+      qrWrap.className = 'collage-cell-qr';
+      qrWrap.style.width = qrSizeMm + 'mm';
+      qrWrap.style.height = qrSizeMm + 'mm';
+      const sizePx = Math.round(qrSizeMm * MM_TO_PX * 3); // higher pixel density for crisp printing
+      new QRCode(qrWrap, {
+        text: content,
+        width: sizePx,
+        height: sizePx,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
       });
+      col.appendChild(qrWrap);
+      requestAnimationFrame(() => {
+        qrWrap.querySelectorAll('canvas, img').forEach((el) => {
+          el.style.width = '100%';
+          el.style.height = '100%';
+        });
+      });
+
+      if (collageShowCodeEl.checked) {
+        const c = document.createElement('div');
+        c.className = 'collage-cell-code';
+        c.textContent = content;
+        col.appendChild(c);
+      }
+
+      row.appendChild(col);
     });
+    cell.appendChild(row);
 
     if (entry.subtitle) {
       const s = document.createElement('div');
       s.className = 'collage-cell-subtitle';
       s.textContent = entry.subtitle;
       cell.appendChild(s);
-    }
-
-    if (collageShowCodeEl.checked) {
-      const c = document.createElement('div');
-      c.className = 'collage-cell-code';
-      c.textContent = entry.content;
-      cell.appendChild(c);
     }
 
     return cell;
@@ -1807,7 +1848,7 @@
 
   [collageEntriesEl, collageCellSizeEl, collageCellCustomWidthEl, collageCellCustomHeightEl,
    collageSheetSizeEl, collageSheetCustomWidthEl, collageSheetCustomHeightEl,
-   collageGapEl, collageShowCodeEl].forEach((el) => {
+   collageGapEl, collageShowCodeEl, collageShowBordersEl].forEach((el) => {
     el.addEventListener('input', updateCollage);
     el.addEventListener('change', updateCollage);
   });
