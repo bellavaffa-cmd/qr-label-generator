@@ -515,7 +515,6 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
     text-align: center;
     overflow: hidden;
     min-width: 0;
@@ -532,31 +531,67 @@
     word-break: break-word;
     font-size: clamp(2mm, calc(var(--cell-min, 50mm) * 0.09), 8mm);
     margin-bottom: 0.4em;
-  }
-  .collage-cell-qr-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
     flex-shrink: 0;
+  }
+  /* Hosts the draggable QR boxes for this cell — position:relative makes it their drag/resize
+     boundary, the same role qr-canvas plays for the main label's QR code. */
+  .collage-cell-qr-canvas {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    min-height: 5mm;
   }
   .collage-cell-qr {
+    position: absolute;
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
+    cursor: move;
+    touch-action: none;
+    user-select: none;
   }
-  .collage-cell-qr img, .collage-cell-qr canvas {
+  body:not(.preview-mode) .collage-cell-qr {
+    outline: 1px dashed rgba(37, 99, 235, 0.6);
+    outline-offset: 2px;
+  }
+  .collage-cell-qr.dragging { cursor: grabbing; }
+  .collage-cell-qr-content {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .collage-cell-qr-content img, .collage-cell-qr-content canvas {
     width: 100%;
     height: 100%;
     image-rendering: pixelated;
   }
+  .collage-qr-resize-handle {
+    position: absolute;
+    right: -5px;
+    bottom: -5px;
+    width: 12px;
+    height: 12px;
+    background: var(--accent);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: nwse-resize;
+    touch-action: none;
+    display: none;
+  }
+  body:not(.preview-mode) .collage-qr-resize-handle { display: block; }
   .collage-cell-subtitle {
     color: #333;
     line-height: 1.15;
     word-break: break-word;
     font-size: clamp(1.8mm, calc(var(--cell-min, 50mm) * 0.065), 6mm);
     margin-top: 0.4em;
+    flex-shrink: 0;
+  }
+  .collage-cell-codes {
+    flex-shrink: 0;
+    margin-top: 0.2em;
   }
   .collage-cell-code {
     font-family: "SF Mono", Menlo, Consolas, monospace;
@@ -564,7 +599,6 @@
     line-height: 1.15;
     word-break: break-all;
     font-size: clamp(1.5mm, calc(var(--cell-min, 50mm) * 0.045), 4mm);
-    margin-top: 0.2em;
   }
 
   @media print {
@@ -573,7 +607,8 @@
     .stage { padding: 0; display: block; }
     .label-wrap { box-shadow: none; }
     .label, .pdf-page, .collage-sheet { page-break-after: always; }
-    .qr-resize-handle, .subtitle-resize-handle { display: none !important; }
+    .qr-resize-handle, .subtitle-resize-handle, .collage-qr-resize-handle { display: none !important; }
+    .collage-cell-qr { outline: none !important; }
     .pdf-page-hidden { display: flex !important; }
   }
 </style>
@@ -997,8 +1032,8 @@
 
     qrBox.style.width = sizeMm + 'mm';
     qrBox.style.height = sizeMm + 'mm';
-    positionBox(qrBox, qrOffset, { w: sizeMm, h: sizeMm });
-    if (hasSubtitle) positionBox(subtitleBox, subtitleOffset);
+    positionBox(qrBox, qrCanvas, qrOffset, { w: sizeMm, h: sizeMm });
+    if (hasSubtitle) positionBox(subtitleBox, qrCanvas, subtitleOffset);
 
     qrContent.innerHTML = '';
     const correctLevel = QRCode.CorrectLevel[ecLevelEl.value] ?? QRCode.CorrectLevel.M;
@@ -1026,13 +1061,13 @@
     return Math.min(Math.max(v, min), max);
   }
 
-  // Positions a draggable box within qr-canvas, honoring offset.x/offset.y (in mm, from canvas
-  // center) while clamping in place so the box never leaves the canvas bounds. Mutates `offset`
-  // with the clamped value so it becomes the new baseline for the next drag/render.
+  // Positions a draggable box within a canvas container, honoring offset.x/offset.y (in mm, from
+  // canvas center) while clamping in place so the box never leaves the canvas bounds. Mutates
+  // `offset` with the clamped value so it becomes the new baseline for the next drag/render.
   // sizeOverride: {w,h} in mm for boxes with a known fixed size (the QR); omitted for boxes that
   // should just be measured as rendered (free-sized text like the subtitle).
-  function positionBox(box, offset, sizeOverride) {
-    const canvasRect = qrCanvas.getBoundingClientRect();
+  function positionBox(box, canvasEl, offset, sizeOverride) {
+    const canvasRect = canvasEl.getBoundingClientRect();
     if (!canvasRect.width || !canvasRect.height) return;
     const canvasWmm = canvasRect.width / MM_TO_PX;
     const canvasHmm = canvasRect.height / MM_TO_PX;
@@ -1194,7 +1229,7 @@
     if (dragState.mode === 'move' && dragState.target === 'qr') {
       qrOffset.x = dragState.startOffsetX + dxMm;
       qrOffset.y = dragState.startOffsetY + dyMm;
-      positionBox(qrBox, qrOffset, { w: parseFloat(qrSizeEl.value), h: parseFloat(qrSizeEl.value) });
+      positionBox(qrBox, qrCanvas, qrOffset, { w: parseFloat(qrSizeEl.value), h: parseFloat(qrSizeEl.value) });
     } else if (dragState.mode === 'resize' && dragState.target === 'qr') {
       const maxQrMm = parseFloat(qrSizeEl.max);
       const minQrMm = parseFloat(qrSizeEl.min);
@@ -1203,15 +1238,15 @@
       qrSizeLabel.textContent = Math.round(newSizeMm);
       qrBox.style.width = newSizeMm + 'mm';
       qrBox.style.height = newSizeMm + 'mm';
-      positionBox(qrBox, qrOffset, { w: newSizeMm, h: newSizeMm });
+      positionBox(qrBox, qrCanvas, qrOffset, { w: newSizeMm, h: newSizeMm });
     } else if (dragState.mode === 'move' && dragState.target === 'subtitle') {
       subtitleOffset.x = dragState.startOffsetX + dxMm;
       subtitleOffset.y = dragState.startOffsetY + dyMm;
-      positionBox(subtitleBox, subtitleOffset);
+      positionBox(subtitleBox, qrCanvas, subtitleOffset);
     } else if (dragState.mode === 'resize' && dragState.target === 'subtitle') {
       subtitleSizeMm = clamp(dragState.startSizeMm + (dxMm + dyMm) / 2, 2, 40);
       subtitleOut.style.fontSize = subtitleSizeMm + 'mm';
-      positionBox(subtitleBox, subtitleOffset);
+      positionBox(subtitleBox, qrCanvas, subtitleOffset);
     }
   });
 
@@ -1723,7 +1758,43 @@
     return { cols, rows, perSheet: cols * rows };
   }
 
-  function buildCollageCell(entry, cellWmm, cellHmm) {
+  // Persists each QR's manually-dragged/resized position & size across rebuilds, keyed by
+  // "entryIndex:qrIndexWithinEntry" (i.e. by line position in the textarea, not by content —
+  // reordering lines carries the position/size of whatever now occupies that slot). Values are
+  // {x, y, sizeMm}, matching the shape positionBox() expects for its `offset` argument.
+  const collageQrState = {};
+  let collageQrDragState = null;
+
+  // The default layout the first time a given QR is seen: with N codes on one label, each gets
+  // an equal slice of the cell's width, arranged in a centered row.
+  function collageDefaultQrLayout(i, n, cellWmm, cellHmm) {
+    const qrGapMm = 1.5;
+    const maxByWidth = ((cellWmm - qrGapMm * (n - 1)) / n) * 0.9;
+    const maxByHeight = cellHmm * 0.6;
+    const sizeMm = Math.max(4, Math.min(maxByWidth, maxByHeight));
+    return { x: (i - (n - 1) / 2) * (sizeMm + qrGapMm), y: 0, sizeMm };
+  }
+
+  function renderCollageQrContent(qrContentEl, content, sizeMm) {
+    qrContentEl.innerHTML = '';
+    const sizePx = Math.round(sizeMm * MM_TO_PX * 3); // higher pixel density for crisp printing
+    new QRCode(qrContentEl, {
+      text: content,
+      width: sizePx,
+      height: sizePx,
+      colorDark: '#000000',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+    requestAnimationFrame(() => {
+      qrContentEl.querySelectorAll('canvas, img').forEach((el) => {
+        el.style.width = '100%';
+        el.style.height = '100%';
+      });
+    });
+  }
+
+  function buildCollageCell(entry, entryIndex, cellWmm, cellHmm) {
     const cell = document.createElement('div');
     cell.className = 'collage-cell' + (collageShowBordersEl.checked ? ' bordered' : '');
 
@@ -1734,54 +1805,74 @@
       cell.appendChild(t);
     }
 
-    // With more than one QR code, each gets its own column in a row, shrinking to fit N across.
+    const canvasEl = document.createElement('div');
+    canvasEl.className = 'collage-cell-qr-canvas';
+    cell.appendChild(canvasEl);
+
+    // Lazily created on the first QR that needs it, so it lands right after the qr-canvas
+    // and before the subtitle regardless of which content index triggers it.
+    let codesEl = null;
+
     const n = entry.contents.length;
-    const qrGapMm = 1.5;
-    const maxByWidth = ((cellWmm - qrGapMm * (n - 1)) / n) * 0.9;
-    const maxByHeight = cellHmm * 0.6;
-    const qrSizeMm = Math.max(4, Math.min(maxByWidth, maxByHeight));
+    entry.contents.forEach((content, i) => {
+      const key = entryIndex + ':' + i;
+      if (!collageQrState[key]) collageQrState[key] = collageDefaultQrLayout(i, n, cellWmm, cellHmm);
+      const state = collageQrState[key];
 
-    const row = document.createElement('div');
-    row.className = 'collage-cell-qr-row';
-    row.style.gap = qrGapMm + 'mm';
+      const qrBox = document.createElement('div');
+      qrBox.className = 'collage-cell-qr';
+      qrBox.style.width = state.sizeMm + 'mm';
+      qrBox.style.height = state.sizeMm + 'mm';
 
-    entry.contents.forEach((content) => {
-      const col = document.createElement('div');
-      col.style.display = 'flex';
-      col.style.flexDirection = 'column';
-      col.style.alignItems = 'center';
+      const qrContentEl = document.createElement('div');
+      qrContentEl.className = 'collage-cell-qr-content';
+      qrBox.appendChild(qrContentEl);
+      renderCollageQrContent(qrContentEl, content, state.sizeMm);
 
-      const qrWrap = document.createElement('div');
-      qrWrap.className = 'collage-cell-qr';
-      qrWrap.style.width = qrSizeMm + 'mm';
-      qrWrap.style.height = qrSizeMm + 'mm';
-      const sizePx = Math.round(qrSizeMm * MM_TO_PX * 3); // higher pixel density for crisp printing
-      new QRCode(qrWrap, {
-        text: content,
-        width: sizePx,
-        height: sizePx,
-        colorDark: '#000000',
-        colorLight: '#ffffff',
-        correctLevel: QRCode.CorrectLevel.M
+      const handle = document.createElement('div');
+      handle.className = 'collage-qr-resize-handle';
+      qrBox.appendChild(handle);
+
+      canvasEl.appendChild(qrBox);
+      positionBox(qrBox, canvasEl, state, { w: state.sizeMm, h: state.sizeMm });
+
+      qrBox.addEventListener('pointerdown', (e) => {
+        if (e.target === handle || document.body.classList.contains('preview-mode')) return;
+        collageQrDragState = { mode: 'move', canvasEl, state, qrBox, startX: e.clientX, startY: e.clientY, startOffsetX: state.x, startOffsetY: state.y };
+        qrBox.setPointerCapture(e.pointerId);
+        qrBox.classList.add('dragging');
+        e.preventDefault();
       });
-      col.appendChild(qrWrap);
-      requestAnimationFrame(() => {
-        qrWrap.querySelectorAll('canvas, img').forEach((el) => {
-          el.style.width = '100%';
-          el.style.height = '100%';
-        });
+
+      handle.addEventListener('pointerdown', (e) => {
+        if (document.body.classList.contains('preview-mode')) return;
+        collageQrDragState = { mode: 'resize', canvasEl, state, qrBox, qrContentEl, content, startX: e.clientX, startY: e.clientY, startSizeMm: state.sizeMm };
+        handle.setPointerCapture(e.pointerId);
+        e.preventDefault();
+        e.stopPropagation();
+      });
+
+      qrBox.addEventListener('dblclick', () => {
+        if (document.body.classList.contains('preview-mode')) return;
+        Object.assign(state, collageDefaultQrLayout(i, n, cellWmm, cellHmm));
+        qrBox.style.width = state.sizeMm + 'mm';
+        qrBox.style.height = state.sizeMm + 'mm';
+        renderCollageQrContent(qrContentEl, content, state.sizeMm);
+        positionBox(qrBox, canvasEl, state, { w: state.sizeMm, h: state.sizeMm });
       });
 
       if (collageShowCodeEl.checked) {
+        if (!codesEl) {
+          codesEl = document.createElement('div');
+          codesEl.className = 'collage-cell-codes';
+          cell.appendChild(codesEl);
+        }
         const c = document.createElement('div');
         c.className = 'collage-cell-code';
         c.textContent = content;
-        col.appendChild(c);
+        codesEl.appendChild(c);
       }
-
-      row.appendChild(col);
     });
-    cell.appendChild(row);
 
     if (entry.subtitle) {
       const s = document.createElement('div');
@@ -1793,6 +1884,39 @@
     return cell;
   }
 
+  window.addEventListener('pointermove', (e) => {
+    if (!collageQrDragState) return;
+    const dxMm = (e.clientX - collageQrDragState.startX) / MM_TO_PX;
+    const dyMm = (e.clientY - collageQrDragState.startY) / MM_TO_PX;
+
+    if (collageQrDragState.mode === 'move') {
+      const { canvasEl, state, qrBox } = collageQrDragState;
+      state.x = collageQrDragState.startOffsetX + dxMm;
+      state.y = collageQrDragState.startOffsetY + dyMm;
+      positionBox(qrBox, canvasEl, state, { w: state.sizeMm, h: state.sizeMm });
+    } else if (collageQrDragState.mode === 'resize') {
+      const { canvasEl, state, qrBox } = collageQrDragState;
+      const maxSizeMm = Math.max(4, Math.min(
+        canvasEl.getBoundingClientRect().width / MM_TO_PX,
+        canvasEl.getBoundingClientRect().height / MM_TO_PX
+      ));
+      state.sizeMm = clamp(collageQrDragState.startSizeMm + (dxMm + dyMm) / 2, 4, maxSizeMm);
+      qrBox.style.width = state.sizeMm + 'mm';
+      qrBox.style.height = state.sizeMm + 'mm';
+      positionBox(qrBox, canvasEl, state, { w: state.sizeMm, h: state.sizeMm });
+    }
+  });
+
+  window.addEventListener('pointerup', () => {
+    if (!collageQrDragState) return;
+    if (collageQrDragState.mode === 'resize') {
+      const { qrContentEl, content, state } = collageQrDragState;
+      renderCollageQrContent(qrContentEl, content, state.sizeMm); // regenerate crisply at the final size
+    }
+    document.querySelectorAll('.collage-cell-qr.dragging').forEach((el) => el.classList.remove('dragging'));
+    collageQrDragState = null;
+  });
+
   function buildCollageSheets() {
     collageSheetsContainer.innerHTML = '';
     const entries = parseCollageEntries();
@@ -1802,6 +1926,11 @@
       collageHint.textContent = 'Enter at least one label above to build the collage.';
       return;
     }
+
+    // Drop any per-QR drag/resize state left over from lines that no longer exist.
+    const validKeys = new Set();
+    entries.forEach((e, ei) => e.contents.forEach((_, ci) => validKeys.add(ei + ':' + ci)));
+    Object.keys(collageQrState).forEach((k) => { if (!validKeys.has(k)) delete collageQrState[k]; });
 
     const { w: sheetWmm, h: sheetHmm } = getCollageSheetDisplayDims();
     const { w: cellWmm, h: cellHmm } = getCollageCellDisplayDims();
@@ -1825,8 +1954,9 @@
       sheetEl.style.gap = gapMm + 'mm';
       sheetEl.style.setProperty('--cell-min', Math.min(cellWmm, cellHmm) + 'mm');
 
-      entries.slice(s * perSheet, (s + 1) * perSheet).forEach((entry) => {
-        sheetEl.appendChild(buildCollageCell(entry, cellWmm, cellHmm));
+      entries.slice(s * perSheet, (s + 1) * perSheet).forEach((entry, localIndex) => {
+        const entryIndex = s * perSheet + localIndex;
+        sheetEl.appendChild(buildCollageCell(entry, entryIndex, cellWmm, cellHmm));
       });
       collageSheetsContainer.appendChild(sheetEl);
     }
