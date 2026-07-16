@@ -14,6 +14,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script src="vendor/qrcode.min.js"></script>
 <script src="vendor/zxing.min.js"></script>
+<script src="vendor/pdf.min.js"></script>
 <style id="pageSizeStyle">@page { size: 100mm 150mm; margin: 0; }</style>
 <style>
   :root {
@@ -280,6 +281,11 @@
   }
   button.primary:hover { background: var(--accent-hover); }
   button:hover { background: var(--button-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button:disabled:hover { background: var(--button-bg); }
+
+  #pdfPageNav { align-items: center; }
+  .pdf-page-indicator { flex: 1; text-align: center; font-size: 13px; color: var(--muted); }
 
   .stage {
     flex: 1;
@@ -401,6 +407,20 @@
     word-break: break-all;
   }
 
+  /* Each uploaded PDF page gets its own div sized to the chosen paper dims, always white/black
+     regardless of theme (it's a print preview). Only the current page shows on screen; print
+     CSS below un-hides all of them with a page break between each. */
+  .pdf-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    color: #000;
+    overflow: hidden;
+  }
+  .pdf-page canvas { image-rendering: pixelated; }
+  .pdf-page-hidden { display: none; }
+
   .scan-video-wrap {
     position: relative;
     width: 100%;
@@ -463,8 +483,9 @@
     .panel, .stage-toolbar, #panelToggleBtn { display: none !important; }
     .stage { padding: 0; display: block; }
     .label-wrap { box-shadow: none; }
-    .label { page-break-after: always; }
+    .label, .pdf-page { page-break-after: always; }
     .qr-resize-handle, .subtitle-resize-handle { display: none !important; }
+    .pdf-page-hidden { display: flex !important; }
   }
 </style>
 </head>
@@ -494,6 +515,7 @@
     <div class="tabs">
       <button type="button" class="tab-btn active" data-tab="create">Create</button>
       <button type="button" class="tab-btn" data-tab="scan">Scan</button>
+      <button type="button" class="tab-btn" data-tab="pdf">Print PDF</button>
       <button type="button" class="tab-btn" data-tab="saved">Saved</button>
     </div>
 
@@ -581,13 +603,56 @@
       <div id="scanResults" class="saved-list"></div>
     </div>
 
+    <div id="pdfTab" class="tab-panel" hidden>
+      <label for="pdfFile">Upload PDF</label>
+      <input type="file" id="pdfFile" accept="application/pdf">
+
+      <label for="pdfPaperSize">Paper size</label>
+      <select id="pdfPaperSize">
+        <option value="100x150">100 &times; 150 mm (4&times;6&Prime; shipping label)</option>
+        <option value="100x100">100 &times; 100 mm (square label)</option>
+        <option value="62x100">62 &times; 100 mm (thermal label)</option>
+        <option value="50x25">50 &times; 25 mm (small label)</option>
+        <option value="a4" selected>A4 (210 &times; 297 mm)</option>
+        <option value="a5">A5 (148 &times; 210 mm)</option>
+        <option value="a6">A6 (105 &times; 148 mm)</option>
+        <option value="letter">Letter (215.9 &times; 279.4 mm)</option>
+        <option value="custom">Custom size&hellip;</option>
+      </select>
+
+      <div class="row" id="pdfCustomSizeRow" style="display:none;">
+        <div>
+          <label for="pdfCustomWidth">Width (mm)</label>
+          <input type="number" id="pdfCustomWidth" min="10" max="1000" step="0.1" value="210">
+        </div>
+        <div>
+          <label for="pdfCustomHeight">Height (mm)</label>
+          <input type="number" id="pdfCustomHeight" min="10" max="1000" step="0.1" value="297">
+        </div>
+      </div>
+
+      <label>Orientation</label>
+      <button type="button" id="pdfOrientationToggle"><span class="orient-icon"></span><span id="pdfOrientationLabel">Portrait</span></button>
+
+      <div class="row" id="pdfPageNav" style="display:none;">
+        <button type="button" id="pdfPrevPage">&lsaquo; Prev</button>
+        <span id="pdfPageIndicator" class="pdf-page-indicator">Page 1 of 1</span>
+        <button type="button" id="pdfNextPage">Next &rsaquo;</button>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="pdfPrintBtn" disabled>Print PDF</button>
+      </div>
+      <p class="hint" id="pdfHint">Upload a PDF, then choose a size to preview and print it.</p>
+    </div>
+
     <div id="savedTab" class="tab-panel" hidden>
       <div id="savedList" class="saved-list"></div>
     </div>
   </div>
 
   <div class="stage">
-    <div class="label-wrap">
+    <div class="label-wrap" id="labelStage">
       <div class="label" id="label">
         <div class="title" id="titleOut"></div>
         <div class="qr-canvas" id="qrCanvas">
@@ -602,6 +667,9 @@
         </div>
         <div class="code-text" id="codeOut"></div>
       </div>
+    </div>
+    <div class="label-wrap" id="pdfStage" hidden>
+      <div id="pdfPagesContainer"></div>
     </div>
   </div>
 </div>
@@ -973,14 +1041,24 @@
   });
 
   // --- Tabs ---
+  const labelStage = document.getElementById('labelStage');
+  const pdfStage = document.getElementById('pdfStage');
+
   document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
       document.getElementById('createTab').hidden = btn.dataset.tab !== 'create';
       document.getElementById('scanTab').hidden = btn.dataset.tab !== 'scan';
+      document.getElementById('pdfTab').hidden = btn.dataset.tab !== 'pdf';
       document.getElementById('savedTab').hidden = btn.dataset.tab !== 'saved';
       if (btn.dataset.tab === 'saved') renderSavedList();
       if (btn.dataset.tab !== 'scan') stopScan(); // release the camera once the user leaves the tab
+
+      // The big preview area (and what @page prints) follows whichever of these two tabs is active.
+      const isPdf = btn.dataset.tab === 'pdf';
+      labelStage.hidden = isPdf;
+      pdfStage.hidden = !isPdf;
+      if (isPdf) syncPdfPageSize(); else render();
     });
   });
 
@@ -1144,6 +1222,184 @@
   }
 
   renderScanResults();
+
+  // --- Print PDF: upload a PDF, preview it, print it at any of the available paper sizes ---
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
+  }
+
+  const pdfFileEl = document.getElementById('pdfFile');
+  const pdfPaperSizeEl = document.getElementById('pdfPaperSize');
+  const pdfCustomSizeRow = document.getElementById('pdfCustomSizeRow');
+  const pdfCustomWidthEl = document.getElementById('pdfCustomWidth');
+  const pdfCustomHeightEl = document.getElementById('pdfCustomHeight');
+  const pdfOrientationToggle = document.getElementById('pdfOrientationToggle');
+  const pdfOrientationLabelEl = document.getElementById('pdfOrientationLabel');
+  const pdfPageNav = document.getElementById('pdfPageNav');
+  const pdfPrevPageBtn = document.getElementById('pdfPrevPage');
+  const pdfNextPageBtn = document.getElementById('pdfNextPage');
+  const pdfPageIndicator = document.getElementById('pdfPageIndicator');
+  const pdfPrintBtn = document.getElementById('pdfPrintBtn');
+  const pdfHint = document.getElementById('pdfHint');
+  const pdfPagesContainer = document.getElementById('pdfPagesContainer');
+
+  let pdfOrientation = 'portrait';
+  let pdfDoc = null;
+  let pdfPageEls = []; // one {wrap, canvas, rendered} entry per PDF page, in document order
+  let pdfCurrentPage = 0; // 0-based index into pdfPageEls
+
+  function getPdfBaseDims() {
+    let a, b;
+    if (pdfPaperSizeEl.value === 'custom') {
+      a = parseFloat(pdfCustomWidthEl.value) || 210;
+      b = parseFloat(pdfCustomHeightEl.value) || 297;
+    } else {
+      const p = PAPER_SIZES[pdfPaperSizeEl.value] || PAPER_SIZES['a4'];
+      a = p.w;
+      b = p.h;
+    }
+    return { w: Math.min(a, b), h: Math.max(a, b) };
+  }
+
+  function getPdfDisplayDims() {
+    const { w, h } = getPdfBaseDims();
+    return pdfOrientation === 'landscape' ? { w: h, h: w } : { w, h };
+  }
+
+  function updatePdfOrientationUi() {
+    pdfOrientationToggle.classList.toggle('is-landscape', pdfOrientation === 'landscape');
+    pdfOrientationLabelEl.textContent = pdfOrientation === 'landscape' ? 'Landscape' : 'Portrait';
+  }
+
+  // Re-applies the current size/orientation to the @page rule, the hint text, and every page div,
+  // then re-renders the current page at the new dimensions. Called on any size/orientation change
+  // and whenever the Print PDF tab becomes active, so @page always matches whichever tab is showing.
+  function syncPdfPageSize() {
+    const { w, h } = getPdfDisplayDims();
+    pageSizeStyle.textContent = `@page { size: ${w}mm ${h}mm; margin: 0; }`;
+    pdfHint.textContent = pdfDoc
+      ? `Print dialog: set paper size to ${w}×${h} mm, scale 100%, margins none. All ${pdfDoc.numPages} page(s) will print.`
+      : 'Upload a PDF, then choose a size to preview and print it.';
+    pdfPageEls.forEach((p) => {
+      p.wrap.style.width = w + 'mm';
+      p.wrap.style.height = h + 'mm';
+      p.rendered = false; // dimensions changed, so any previously rendered canvas is now the wrong size
+    });
+    if (pdfDoc) renderPdfPage(pdfCurrentPage);
+  }
+
+  function buildPdfPageEls() {
+    pdfPagesContainer.innerHTML = '';
+    pdfPageEls = [];
+    for (let i = 0; i < pdfDoc.numPages; i++) {
+      const wrap = document.createElement('div');
+      wrap.className = 'pdf-page pdf-page-hidden';
+      const canvas = document.createElement('canvas');
+      wrap.appendChild(canvas);
+      pdfPagesContainer.appendChild(wrap);
+      pdfPageEls.push({ wrap, canvas, rendered: false });
+    }
+    showOnlyPdfPage(0);
+  }
+
+  function showOnlyPdfPage(index) {
+    pdfPageEls.forEach((p, i) => p.wrap.classList.toggle('pdf-page-hidden', i !== index));
+  }
+
+  // Renders one PDF page into its canvas, scaled to fit within the target size (preserving the
+  // page's own aspect ratio, centered) at a pixel density high enough for crisp printing.
+  async function renderPdfPage(index) {
+    const entry = pdfPageEls[index];
+    if (!entry || entry.rendered) return;
+    const page = await pdfDoc.getPage(index + 1);
+    const { w: targetWmm, h: targetHmm } = getPdfDisplayDims();
+    const base = page.getViewport({ scale: 1 }); // pdf.js scale:1 viewport units are CSS px at 96dpi
+    const pdfWmm = base.width / MM_TO_PX;
+    const pdfHmm = base.height / MM_TO_PX;
+    const fitScale = Math.min(targetWmm / pdfWmm, targetHmm / pdfHmm);
+    const renderWmm = pdfWmm * fitScale;
+    const renderHmm = pdfHmm * fitScale;
+    const PRINT_PX_PER_MM = 11.8; // ~300dpi, matches the crisp-print approach used for the QR code
+    const pdfRenderScale = (renderWmm * PRINT_PX_PER_MM) / base.width;
+    const viewport = page.getViewport({ scale: pdfRenderScale });
+    entry.canvas.width = Math.round(viewport.width);
+    entry.canvas.height = Math.round(viewport.height);
+    entry.canvas.style.width = renderWmm + 'mm';
+    entry.canvas.style.height = renderHmm + 'mm';
+    await page.render({ canvasContext: entry.canvas.getContext('2d'), viewport }).promise;
+    entry.rendered = true;
+  }
+
+  async function goToPdfPage(index) {
+    if (!pdfDoc || index < 0 || index >= pdfDoc.numPages) return;
+    pdfCurrentPage = index;
+    showOnlyPdfPage(index);
+    updatePdfPageIndicator();
+    await renderPdfPage(index);
+  }
+
+  function updatePdfPageIndicator() {
+    if (!pdfDoc) return;
+    pdfPageIndicator.textContent = `Page ${pdfCurrentPage + 1} of ${pdfDoc.numPages}`;
+    pdfPrevPageBtn.disabled = pdfCurrentPage === 0;
+    pdfNextPageBtn.disabled = pdfCurrentPage === pdfDoc.numPages - 1;
+  }
+
+  async function loadPdfFile(file) {
+    pdfHint.textContent = 'Loading PDF…';
+    pdfPrintBtn.disabled = true;
+    try {
+      const buf = await file.arrayBuffer();
+      pdfDoc = await pdfjsLib.getDocument({ data: buf }).promise;
+      pdfCurrentPage = 0;
+      buildPdfPageEls();
+      pdfPageNav.style.display = pdfDoc.numPages > 1 ? 'flex' : 'none';
+      pdfPrintBtn.disabled = false;
+      updatePdfPageIndicator();
+      syncPdfPageSize();
+    } catch (err) {
+      console.warn('Failed to load PDF:', err);
+      pdfDoc = null;
+      pdfPrintBtn.disabled = true;
+      pdfHint.textContent = 'Could not load that file. Make sure it is a valid PDF.';
+    }
+  }
+
+  pdfFileEl.addEventListener('change', () => {
+    const file = pdfFileEl.files[0];
+    if (file) loadPdfFile(file);
+  });
+
+  function onPdfSizeControlChange() {
+    pdfCustomSizeRow.style.display = pdfPaperSizeEl.value === 'custom' ? 'flex' : 'none';
+    syncPdfPageSize();
+  }
+  [pdfPaperSizeEl, pdfCustomWidthEl, pdfCustomHeightEl].forEach((el) => {
+    el.addEventListener('input', onPdfSizeControlChange);
+    el.addEventListener('change', onPdfSizeControlChange);
+  });
+
+  pdfOrientationToggle.addEventListener('click', () => {
+    pdfOrientation = pdfOrientation === 'landscape' ? 'portrait' : 'landscape';
+    updatePdfOrientationUi();
+    syncPdfPageSize();
+  });
+  updatePdfOrientationUi();
+
+  pdfPrevPageBtn.addEventListener('click', () => goToPdfPage(pdfCurrentPage - 1));
+  pdfNextPageBtn.addEventListener('click', () => goToPdfPage(pdfCurrentPage + 1));
+
+  pdfPrintBtn.addEventListener('click', async () => {
+    if (!pdfDoc) return;
+    pdfPrintBtn.disabled = true;
+    const originalHint = pdfHint.textContent;
+    pdfHint.textContent = 'Preparing pages for print…';
+    await Promise.all(pdfPageEls.map((_, i) => renderPdfPage(i)));
+    pdfPrintBtn.disabled = false;
+    pdfHint.textContent = originalHint;
+    syncPdfPageSize(); // re-confirm @page right before printing in case anything else changed it
+    window.print();
+  });
 
   // --- Save for later ---
   const SAVED_KEY = 'qr-label-app-saved-items';

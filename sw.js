@@ -1,10 +1,12 @@
-const CACHE_NAME = 'qr-label-app-v14';
+const CACHE_NAME = 'qr-label-app-v15';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
   './vendor/qrcode.min.js',
   './vendor/zxing.min.js',
+  './vendor/pdf.min.js',
+  './vendor/pdf.worker.min.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-512-maskable.png',
