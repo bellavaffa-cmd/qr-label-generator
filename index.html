@@ -348,6 +348,14 @@
     width: 100%;
     min-height: 10mm;
   }
+  /* Shown only while actively dragging/resizing something inside — a lightweight alignment
+     guide at the same spacing everything snaps to (GRID_MM in the script). */
+  .snap-grid-active {
+    background-image:
+      linear-gradient(to right, rgba(37, 99, 235, 0.3) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(37, 99, 235, 0.3) 1px, transparent 1px);
+    background-size: 2mm 2mm;
+  }
   .label .qr-box {
     position: absolute;
     display: flex;
@@ -609,6 +617,7 @@
     .label, .pdf-page, .collage-sheet { page-break-after: always; }
     .qr-resize-handle, .subtitle-resize-handle, .collage-qr-resize-handle { display: none !important; }
     .collage-cell-qr { outline: none !important; }
+    .snap-grid-active { background-image: none !important; }
     .pdf-page-hidden { display: flex !important; }
   }
 </style>
@@ -1061,6 +1070,13 @@
     return Math.min(Math.max(v, min), max);
   }
 
+  // Grid guide shown while dragging/resizing a QR (or the subtitle), and the increment
+  // everything snaps to — both position and size — for easier, more consistent alignment.
+  const GRID_MM = 2;
+  function snapToGrid(v) {
+    return Math.round(v / GRID_MM) * GRID_MM;
+  }
+
   // Positions a draggable box within a canvas container, honoring offset.x/offset.y (in mm, from
   // canvas center) while clamping in place so the box never leaves the canvas bounds. Mutates
   // `offset` with the clamped value so it becomes the new baseline for the next drag/render.
@@ -1180,6 +1196,7 @@
     dragState = { mode: 'move', target: 'qr', startX: e.clientX, startY: e.clientY, startOffsetX: qrOffset.x, startOffsetY: qrOffset.y };
     qrBox.setPointerCapture(e.pointerId);
     qrBox.classList.add('dragging');
+    qrCanvas.classList.add('snap-grid-active');
     e.preventDefault();
   });
 
@@ -1187,6 +1204,7 @@
     if (!labelEl.classList.contains('editing')) return;
     dragState = { mode: 'resize', target: 'qr', startX: e.clientX, startY: e.clientY, startSizeMm: parseFloat(qrSizeEl.value) };
     qrResizeHandle.setPointerCapture(e.pointerId);
+    qrCanvas.classList.add('snap-grid-active');
     e.preventDefault();
     e.stopPropagation();
   });
@@ -1203,6 +1221,7 @@
     dragState = { mode: 'move', target: 'subtitle', startX: e.clientX, startY: e.clientY, startOffsetX: subtitleOffset.x, startOffsetY: subtitleOffset.y };
     subtitleBox.setPointerCapture(e.pointerId);
     subtitleBox.classList.add('dragging');
+    qrCanvas.classList.add('snap-grid-active');
     e.preventDefault();
   });
 
@@ -1210,6 +1229,7 @@
     if (!labelEl.classList.contains('editing')) return;
     dragState = { mode: 'resize', target: 'subtitle', startX: e.clientX, startY: e.clientY, startSizeMm: subtitleSizeMm };
     subtitleResizeHandle.setPointerCapture(e.pointerId);
+    qrCanvas.classList.add('snap-grid-active');
     e.preventDefault();
     e.stopPropagation();
   });
@@ -1227,24 +1247,24 @@
     const dyMm = (e.clientY - dragState.startY) / MM_TO_PX;
 
     if (dragState.mode === 'move' && dragState.target === 'qr') {
-      qrOffset.x = dragState.startOffsetX + dxMm;
-      qrOffset.y = dragState.startOffsetY + dyMm;
+      qrOffset.x = snapToGrid(dragState.startOffsetX + dxMm);
+      qrOffset.y = snapToGrid(dragState.startOffsetY + dyMm);
       positionBox(qrBox, qrCanvas, qrOffset, { w: parseFloat(qrSizeEl.value), h: parseFloat(qrSizeEl.value) });
     } else if (dragState.mode === 'resize' && dragState.target === 'qr') {
       const maxQrMm = parseFloat(qrSizeEl.max);
       const minQrMm = parseFloat(qrSizeEl.min);
-      const newSizeMm = clamp(dragState.startSizeMm + (dxMm + dyMm) / 2, minQrMm, maxQrMm);
+      const newSizeMm = snapToGrid(clamp(dragState.startSizeMm + (dxMm + dyMm) / 2, minQrMm, maxQrMm));
       qrSizeEl.value = newSizeMm.toFixed(1);
       qrSizeLabel.textContent = Math.round(newSizeMm);
       qrBox.style.width = newSizeMm + 'mm';
       qrBox.style.height = newSizeMm + 'mm';
       positionBox(qrBox, qrCanvas, qrOffset, { w: newSizeMm, h: newSizeMm });
     } else if (dragState.mode === 'move' && dragState.target === 'subtitle') {
-      subtitleOffset.x = dragState.startOffsetX + dxMm;
-      subtitleOffset.y = dragState.startOffsetY + dyMm;
+      subtitleOffset.x = snapToGrid(dragState.startOffsetX + dxMm);
+      subtitleOffset.y = snapToGrid(dragState.startOffsetY + dyMm);
       positionBox(subtitleBox, qrCanvas, subtitleOffset);
     } else if (dragState.mode === 'resize' && dragState.target === 'subtitle') {
-      subtitleSizeMm = clamp(dragState.startSizeMm + (dxMm + dyMm) / 2, 2, 40);
+      subtitleSizeMm = snapToGrid(clamp(dragState.startSizeMm + (dxMm + dyMm) / 2, 2, 40));
       subtitleOut.style.fontSize = subtitleSizeMm + 'mm';
       positionBox(subtitleBox, qrCanvas, subtitleOffset);
     }
@@ -1256,6 +1276,7 @@
     dragState = null;
     qrBox.classList.remove('dragging');
     subtitleBox.classList.remove('dragging');
+    qrCanvas.classList.remove('snap-grid-active');
     if (wasQrResize) render(); // regenerate the QR at the correct pixel density for the final size
   });
 
@@ -1764,6 +1785,7 @@
   // {x, y, sizeMm}, matching the shape positionBox() expects for its `offset` argument.
   const collageQrState = {};
   let collageQrDragState = null;
+  let pendingCollagePositions = [];
 
   // The default layout the first time a given QR is seen: with N codes on one label, each gets
   // an equal slice of the cell's width, arranged in a centered row.
@@ -1834,13 +1856,18 @@
       qrBox.appendChild(handle);
 
       canvasEl.appendChild(qrBox);
-      positionBox(qrBox, canvasEl, state, { w: state.sizeMm, h: state.sizeMm });
+      // Can't position yet: canvasEl isn't attached to the live document until the whole sheet
+      // is (buildCollageSheets appends sheets only after every cell in them is built), and
+      // getBoundingClientRect() on a detached element always reports zero size. Queue it and
+      // position everything in one pass once the sheets are actually in the DOM.
+      pendingCollagePositions.push({ qrBox, canvasEl, state });
 
       qrBox.addEventListener('pointerdown', (e) => {
         if (e.target === handle || document.body.classList.contains('preview-mode')) return;
         collageQrDragState = { mode: 'move', canvasEl, state, qrBox, startX: e.clientX, startY: e.clientY, startOffsetX: state.x, startOffsetY: state.y };
         qrBox.setPointerCapture(e.pointerId);
         qrBox.classList.add('dragging');
+        canvasEl.classList.add('snap-grid-active');
         e.preventDefault();
       });
 
@@ -1848,6 +1875,7 @@
         if (document.body.classList.contains('preview-mode')) return;
         collageQrDragState = { mode: 'resize', canvasEl, state, qrBox, qrContentEl, content, startX: e.clientX, startY: e.clientY, startSizeMm: state.sizeMm };
         handle.setPointerCapture(e.pointerId);
+        canvasEl.classList.add('snap-grid-active');
         e.preventDefault();
         e.stopPropagation();
       });
@@ -1891,8 +1919,8 @@
 
     if (collageQrDragState.mode === 'move') {
       const { canvasEl, state, qrBox } = collageQrDragState;
-      state.x = collageQrDragState.startOffsetX + dxMm;
-      state.y = collageQrDragState.startOffsetY + dyMm;
+      state.x = snapToGrid(collageQrDragState.startOffsetX + dxMm);
+      state.y = snapToGrid(collageQrDragState.startOffsetY + dyMm);
       positionBox(qrBox, canvasEl, state, { w: state.sizeMm, h: state.sizeMm });
     } else if (collageQrDragState.mode === 'resize') {
       const { canvasEl, state, qrBox } = collageQrDragState;
@@ -1900,7 +1928,7 @@
         canvasEl.getBoundingClientRect().width / MM_TO_PX,
         canvasEl.getBoundingClientRect().height / MM_TO_PX
       ));
-      state.sizeMm = clamp(collageQrDragState.startSizeMm + (dxMm + dyMm) / 2, 4, maxSizeMm);
+      state.sizeMm = snapToGrid(clamp(collageQrDragState.startSizeMm + (dxMm + dyMm) / 2, 4, maxSizeMm));
       qrBox.style.width = state.sizeMm + 'mm';
       qrBox.style.height = state.sizeMm + 'mm';
       positionBox(qrBox, canvasEl, state, { w: state.sizeMm, h: state.sizeMm });
@@ -1913,12 +1941,14 @@
       const { qrContentEl, content, state } = collageQrDragState;
       renderCollageQrContent(qrContentEl, content, state.sizeMm); // regenerate crisply at the final size
     }
+    collageQrDragState.canvasEl.classList.remove('snap-grid-active');
     document.querySelectorAll('.collage-cell-qr.dragging').forEach((el) => el.classList.remove('dragging'));
     collageQrDragState = null;
   });
 
   function buildCollageSheets() {
     collageSheetsContainer.innerHTML = '';
+    pendingCollagePositions = [];
     const entries = parseCollageEntries();
 
     if (!entries.length) {
@@ -1960,6 +1990,13 @@
       });
       collageSheetsContainer.appendChild(sheetEl);
     }
+
+    // Only now is every sheet actually attached to the document and laid out, so this is the
+    // first point at which measuring each QR's canvas (inside positionBox) gives real numbers.
+    pendingCollagePositions.forEach(({ qrBox, canvasEl, state }) => {
+      positionBox(qrBox, canvasEl, state, { w: state.sizeMm, h: state.sizeMm });
+    });
+    pendingCollagePositions = [];
 
     collagePrintBtn.disabled = false;
     collageHint.textContent = `${cols}×${rows} = ${perSheet} label(s) per sheet. ${entries.length} label(s) will use ${sheetCount} sheet(s).`;
