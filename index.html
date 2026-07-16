@@ -287,6 +287,27 @@
   #pdfPageNav { align-items: center; }
   .pdf-page-indicator { flex: 1; text-align: center; font-size: 13px; color: var(--muted); }
 
+  .pdf-dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 20px 12px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+  }
+  .pdf-dropzone:hover, .pdf-dropzone:focus-visible {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .pdf-dropzone.dragover {
+    border-color: var(--accent);
+    background: rgba(37, 99, 235, 0.08);
+    color: var(--text);
+  }
+  .pdf-dropzone input[type="file"] { display: none; }
+
   .stage {
     flex: 1;
     display: flex;
@@ -605,7 +626,10 @@
 
     <div id="pdfTab" class="tab-panel" hidden>
       <label for="pdfFile">Upload PDF</label>
-      <input type="file" id="pdfFile" accept="application/pdf">
+      <div id="pdfDropZone" class="pdf-dropzone" tabindex="0" role="button" aria-label="Upload a PDF: click to browse or drag and drop a file here">
+        <span id="pdfDropZoneText">Drag &amp; drop a PDF here, or click to browse</span>
+        <input type="file" id="pdfFile" accept="application/pdf">
+      </div>
 
       <label for="pdfPaperSize">Paper size</label>
       <select id="pdfPaperSize">
@@ -1229,6 +1253,8 @@
   }
 
   const pdfFileEl = document.getElementById('pdfFile');
+  const pdfDropZone = document.getElementById('pdfDropZone');
+  const pdfDropZoneText = document.getElementById('pdfDropZoneText');
   const pdfPaperSizeEl = document.getElementById('pdfPaperSize');
   const pdfCustomSizeRow = document.getElementById('pdfCustomSizeRow');
   const pdfCustomWidthEl = document.getElementById('pdfCustomWidth');
@@ -1355,20 +1381,58 @@
       buildPdfPageEls();
       pdfPageNav.style.display = pdfDoc.numPages > 1 ? 'flex' : 'none';
       pdfPrintBtn.disabled = false;
+      pdfDropZoneText.textContent = file.name;
       updatePdfPageIndicator();
       syncPdfPageSize();
     } catch (err) {
       console.warn('Failed to load PDF:', err);
       pdfDoc = null;
       pdfPrintBtn.disabled = true;
+      pdfDropZoneText.textContent = 'Drag & drop a PDF here, or click to browse';
       pdfHint.textContent = 'Could not load that file. Make sure it is a valid PDF.';
     }
+  }
+
+  function isPdfFile(file) {
+    return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
   }
 
   pdfFileEl.addEventListener('change', () => {
     const file = pdfFileEl.files[0];
     if (file) loadPdfFile(file);
   });
+
+  // Click (or Enter/Space, since the zone is a role="button") opens the native file picker.
+  pdfDropZone.addEventListener('click', () => pdfFileEl.click());
+  pdfDropZone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pdfFileEl.click(); }
+  });
+
+  ['dragenter', 'dragover'].forEach((evt) => {
+    pdfDropZone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      pdfDropZone.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'dragend'].forEach((evt) => {
+    pdfDropZone.addEventListener(evt, () => pdfDropZone.classList.remove('dragover'));
+  });
+  pdfDropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    pdfDropZone.classList.remove('dragover');
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    if (!isPdfFile(file)) {
+      pdfHint.textContent = 'That file does not look like a PDF.';
+      return;
+    }
+    loadPdfFile(file);
+  });
+
+  // Safety net: dropping a file anywhere else on the page would otherwise make the browser
+  // navigate away to display it raw, losing all app state. Only the drop zone above should react.
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => e.preventDefault());
 
   function onPdfSizeControlChange() {
     pdfCustomSizeRow.style.display = pdfPaperSizeEl.value === 'custom' ? 'flex' : 'none';
