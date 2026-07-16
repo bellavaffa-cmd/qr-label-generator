@@ -193,6 +193,7 @@
   body.preview-mode .panel { display: none; }
   .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     margin: 18px 0 20px;
     border-bottom: 1px solid var(--border);
@@ -499,12 +500,68 @@
     font-size: 12px;
   }
 
+  /* A collage sheet is a grid of identically-sized label cells (e.g. many small labels tiled
+     onto one A4 page). --cell-min (the smaller of the cell's own width/height) drives the same
+     kind of proportional font-size clamp() used on the main label, inherited down to every cell. */
+  .collage-sheet {
+    background: #fff;
+    color: #000;
+    display: grid;
+    justify-content: center;
+    align-content: center;
+    box-sizing: border-box;
+  }
+  .collage-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    overflow: hidden;
+    min-width: 0;
+    min-height: 0;
+    padding: clamp(1mm, calc(var(--cell-min, 50mm) * 0.06), 4mm);
+  }
+  .collage-cell-title {
+    font-weight: 700;
+    line-height: 1.15;
+    word-break: break-word;
+    font-size: clamp(2mm, calc(var(--cell-min, 50mm) * 0.09), 8mm);
+    margin-bottom: 0.4em;
+  }
+  .collage-cell-qr {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .collage-cell-qr img, .collage-cell-qr canvas {
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+  }
+  .collage-cell-subtitle {
+    color: #333;
+    line-height: 1.15;
+    word-break: break-word;
+    font-size: clamp(1.8mm, calc(var(--cell-min, 50mm) * 0.065), 6mm);
+    margin-top: 0.4em;
+  }
+  .collage-cell-code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    color: #555;
+    line-height: 1.15;
+    word-break: break-all;
+    font-size: clamp(1.5mm, calc(var(--cell-min, 50mm) * 0.045), 4mm);
+    margin-top: 0.2em;
+  }
+
   @media print {
     body, html { margin: 0; padding: 0; background: #fff; }
     .panel, .stage-toolbar, #panelToggleBtn { display: none !important; }
     .stage { padding: 0; display: block; }
     .label-wrap { box-shadow: none; }
-    .label, .pdf-page { page-break-after: always; }
+    .label, .pdf-page, .collage-sheet { page-break-after: always; }
     .qr-resize-handle, .subtitle-resize-handle { display: none !important; }
     .pdf-page-hidden { display: flex !important; }
   }
@@ -537,6 +594,7 @@
       <button type="button" class="tab-btn active" data-tab="create">Create</button>
       <button type="button" class="tab-btn" data-tab="scan">Scan</button>
       <button type="button" class="tab-btn" data-tab="pdf">Print PDF</button>
+      <button type="button" class="tab-btn" data-tab="collage">Collage</button>
       <button type="button" class="tab-btn" data-tab="saved">Saved</button>
     </div>
 
@@ -672,6 +730,85 @@
       <p class="hint" id="pdfHint">Upload a PDF, then choose a size to preview and print it.</p>
     </div>
 
+    <div id="collageTab" class="tab-panel" hidden>
+      <label for="collageEntries">Labels (one per line: content | title | subtitle)</label>
+      <textarea id="collageEntries" placeholder="https://example.com/1|Item 1|Batch A&#10;https://example.com/2|Item 2|Batch A&#10;https://example.com/3"></textarea>
+
+      <label for="collageCellSize">Label size</label>
+      <select id="collageCellSize">
+        <option value="100x150">100 &times; 150 mm (4&times;6&Prime; shipping label)</option>
+        <option value="100x100">100 &times; 100 mm (square label)</option>
+        <option value="62x100">62 &times; 100 mm (thermal label)</option>
+        <option value="50x25" selected>50 &times; 25 mm (small label)</option>
+        <option value="creditcard">Credit card (85.6 &times; 53.98 mm)</option>
+        <option value="a4">A4 (210 &times; 297 mm)</option>
+        <option value="a5">A5 (148 &times; 210 mm)</option>
+        <option value="a6">A6 (105 &times; 148 mm)</option>
+        <option value="letter">Letter (215.9 &times; 279.4 mm)</option>
+        <option value="custom">Custom size&hellip;</option>
+      </select>
+
+      <div class="row" id="collageCellCustomRow" style="display:none;">
+        <div>
+          <label for="collageCellCustomWidth">Width (mm)</label>
+          <input type="number" id="collageCellCustomWidth" min="5" max="500" step="0.1" value="50">
+        </div>
+        <div>
+          <label for="collageCellCustomHeight">Height (mm)</label>
+          <input type="number" id="collageCellCustomHeight" min="5" max="500" step="0.1" value="25">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Label orientation</label>
+          <button type="button" id="collageCellOrientationToggle"><span class="orient-icon"></span><span id="collageCellOrientationLabel">Portrait</span></button>
+        </div>
+        <div>
+          <label>Sheet orientation</label>
+          <button type="button" id="collageSheetOrientationToggle"><span class="orient-icon"></span><span id="collageSheetOrientationLabel">Portrait</span></button>
+        </div>
+      </div>
+
+      <label for="collageSheetSize">Sheet size</label>
+      <select id="collageSheetSize">
+        <option value="100x150">100 &times; 150 mm (4&times;6&Prime; shipping label)</option>
+        <option value="100x100">100 &times; 100 mm (square label)</option>
+        <option value="62x100">62 &times; 100 mm (thermal label)</option>
+        <option value="50x25">50 &times; 25 mm (small label)</option>
+        <option value="creditcard">Credit card (85.6 &times; 53.98 mm)</option>
+        <option value="a4" selected>A4 (210 &times; 297 mm)</option>
+        <option value="a5">A5 (148 &times; 210 mm)</option>
+        <option value="a6">A6 (105 &times; 148 mm)</option>
+        <option value="letter">Letter (215.9 &times; 279.4 mm)</option>
+        <option value="custom">Custom size&hellip;</option>
+      </select>
+
+      <div class="row" id="collageSheetCustomRow" style="display:none;">
+        <div>
+          <label for="collageSheetCustomWidth">Width (mm)</label>
+          <input type="number" id="collageSheetCustomWidth" min="10" max="1000" step="0.1" value="210">
+        </div>
+        <div>
+          <label for="collageSheetCustomHeight">Height (mm)</label>
+          <input type="number" id="collageSheetCustomHeight" min="10" max="1000" step="0.1" value="297">
+        </div>
+      </div>
+
+      <label for="collageGap">Gap between labels: <span id="collageGapLabel">2</span> mm</label>
+      <input type="range" id="collageGap" min="0" max="10" step="0.5" value="2" style="width:100%;">
+
+      <label>
+        <input type="checkbox" id="collageShowCode" style="width:auto; display:inline; vertical-align:middle; margin-right:6px;">
+        Show content as text under each QR code
+      </label>
+
+      <div class="actions">
+        <button class="primary" id="collagePrintBtn" disabled>Print collage</button>
+      </div>
+      <p class="hint" id="collageHint">Enter at least one label above to build the collage.</p>
+    </div>
+
     <div id="savedTab" class="tab-panel" hidden>
       <div id="savedList" class="saved-list"></div>
     </div>
@@ -696,6 +833,9 @@
     </div>
     <div class="label-wrap" id="pdfStage" hidden>
       <div id="pdfPagesContainer"></div>
+    </div>
+    <div class="label-wrap" id="collageStage" hidden>
+      <div id="collageSheetsContainer"></div>
     </div>
   </div>
 </div>
@@ -1070,22 +1210,28 @@
   // --- Tabs ---
   const labelStage = document.getElementById('labelStage');
   const pdfStage = document.getElementById('pdfStage');
+  const collageStage = document.getElementById('collageStage');
 
   document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
       document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
-      document.getElementById('createTab').hidden = btn.dataset.tab !== 'create';
-      document.getElementById('scanTab').hidden = btn.dataset.tab !== 'scan';
-      document.getElementById('pdfTab').hidden = btn.dataset.tab !== 'pdf';
-      document.getElementById('savedTab').hidden = btn.dataset.tab !== 'saved';
-      if (btn.dataset.tab === 'saved') renderSavedList();
-      if (btn.dataset.tab !== 'scan') stopScan(); // release the camera once the user leaves the tab
+      document.getElementById('createTab').hidden = tab !== 'create';
+      document.getElementById('scanTab').hidden = tab !== 'scan';
+      document.getElementById('pdfTab').hidden = tab !== 'pdf';
+      document.getElementById('collageTab').hidden = tab !== 'collage';
+      document.getElementById('savedTab').hidden = tab !== 'saved';
+      if (tab === 'saved') renderSavedList();
+      if (tab !== 'scan') stopScan(); // release the camera once the user leaves the tab
 
-      // The big preview area (and what @page prints) follows whichever of these two tabs is active.
-      const isPdf = btn.dataset.tab === 'pdf';
-      labelStage.hidden = isPdf;
-      pdfStage.hidden = !isPdf;
-      if (isPdf) syncPdfPageSize(); else render();
+      // The big preview area (and what @page prints) follows whichever of these tabs is active.
+      // Create/Scan/Saved all share the same live label preview underneath.
+      labelStage.hidden = tab === 'pdf' || tab === 'collage';
+      pdfStage.hidden = tab !== 'pdf';
+      collageStage.hidden = tab !== 'collage';
+      if (tab === 'pdf') syncPdfPageSize();
+      else if (tab === 'collage') updateCollage();
+      else render();
     });
   });
 
@@ -1465,6 +1611,227 @@
     pdfPrintBtn.disabled = false;
     pdfHint.textContent = originalHint;
     syncPdfPageSize(); // re-confirm @page right before printing in case anything else changed it
+    window.print();
+  });
+
+  // --- Collage: tile many small labels (each its own QR + optional title/subtitle) onto one sheet ---
+  const collageEntriesEl = document.getElementById('collageEntries');
+  const collageCellSizeEl = document.getElementById('collageCellSize');
+  const collageCellCustomRow = document.getElementById('collageCellCustomRow');
+  const collageCellCustomWidthEl = document.getElementById('collageCellCustomWidth');
+  const collageCellCustomHeightEl = document.getElementById('collageCellCustomHeight');
+  const collageCellOrientationToggle = document.getElementById('collageCellOrientationToggle');
+  const collageCellOrientationLabelEl = document.getElementById('collageCellOrientationLabel');
+  const collageSheetSizeEl = document.getElementById('collageSheetSize');
+  const collageSheetCustomRow = document.getElementById('collageSheetCustomRow');
+  const collageSheetCustomWidthEl = document.getElementById('collageSheetCustomWidth');
+  const collageSheetCustomHeightEl = document.getElementById('collageSheetCustomHeight');
+  const collageSheetOrientationToggle = document.getElementById('collageSheetOrientationToggle');
+  const collageSheetOrientationLabelEl = document.getElementById('collageSheetOrientationLabel');
+  const collageGapEl = document.getElementById('collageGap');
+  const collageGapLabelEl = document.getElementById('collageGapLabel');
+  const collageShowCodeEl = document.getElementById('collageShowCode');
+  const collagePrintBtn = document.getElementById('collagePrintBtn');
+  const collageHint = document.getElementById('collageHint');
+  const collageSheetsContainer = document.getElementById('collageSheetsContainer');
+
+  let collageCellOrientation = 'portrait';
+  let collageSheetOrientation = 'portrait';
+
+  function getCollageCellBaseDims() {
+    let a, b;
+    if (collageCellSizeEl.value === 'custom') {
+      a = parseFloat(collageCellCustomWidthEl.value) || 50;
+      b = parseFloat(collageCellCustomHeightEl.value) || 25;
+    } else {
+      const p = PAPER_SIZES[collageCellSizeEl.value] || PAPER_SIZES['50x25'];
+      a = p.w;
+      b = p.h;
+    }
+    return { w: Math.min(a, b), h: Math.max(a, b) };
+  }
+
+  function getCollageCellDisplayDims() {
+    const { w, h } = getCollageCellBaseDims();
+    return collageCellOrientation === 'landscape' ? { w: h, h: w } : { w, h };
+  }
+
+  function getCollageSheetBaseDims() {
+    let a, b;
+    if (collageSheetSizeEl.value === 'custom') {
+      a = parseFloat(collageSheetCustomWidthEl.value) || 210;
+      b = parseFloat(collageSheetCustomHeightEl.value) || 297;
+    } else {
+      const p = PAPER_SIZES[collageSheetSizeEl.value] || PAPER_SIZES['a4'];
+      a = p.w;
+      b = p.h;
+    }
+    return { w: Math.min(a, b), h: Math.max(a, b) };
+  }
+
+  function getCollageSheetDisplayDims() {
+    const { w, h } = getCollageSheetBaseDims();
+    return collageSheetOrientation === 'landscape' ? { w: h, h: w } : { w, h };
+  }
+
+  function updateCollageCellOrientationUi() {
+    collageCellOrientationToggle.classList.toggle('is-landscape', collageCellOrientation === 'landscape');
+    collageCellOrientationLabelEl.textContent = collageCellOrientation === 'landscape' ? 'Landscape' : 'Portrait';
+  }
+
+  function updateCollageSheetOrientationUi() {
+    collageSheetOrientationToggle.classList.toggle('is-landscape', collageSheetOrientation === 'landscape');
+    collageSheetOrientationLabelEl.textContent = collageSheetOrientation === 'landscape' ? 'Landscape' : 'Portrait';
+  }
+
+  // Each line is "content|title|subtitle" — title and subtitle are optional trailing parts.
+  // Lines with no content at all (blank lines, or a line that's just "|something") are skipped.
+  function parseCollageEntries() {
+    return collageEntriesEl.value
+      .split('\n')
+      .map((line) => {
+        const [content, title, subtitle] = line.split('|').map((s) => (s || '').trim());
+        return { content: content || '', title: title || '', subtitle: subtitle || '' };
+      })
+      .filter((e) => e.content);
+  }
+
+  function computeCollageGrid(sheetWmm, sheetHmm, cellWmm, cellHmm, gapMm) {
+    const cols = Math.max(1, Math.floor((sheetWmm + gapMm) / (cellWmm + gapMm)));
+    const rows = Math.max(1, Math.floor((sheetHmm + gapMm) / (cellHmm + gapMm)));
+    return { cols, rows, perSheet: cols * rows };
+  }
+
+  function buildCollageCell(entry, cellWmm, cellHmm) {
+    const cell = document.createElement('div');
+    cell.className = 'collage-cell';
+
+    if (entry.title) {
+      const t = document.createElement('div');
+      t.className = 'collage-cell-title';
+      t.textContent = entry.title;
+      cell.appendChild(t);
+    }
+
+    const qrWrap = document.createElement('div');
+    qrWrap.className = 'collage-cell-qr';
+    const qrSizeMm = Math.max(5, Math.min(cellWmm, cellHmm) * 0.6);
+    qrWrap.style.width = qrSizeMm + 'mm';
+    qrWrap.style.height = qrSizeMm + 'mm';
+    const sizePx = Math.round(qrSizeMm * MM_TO_PX * 3); // higher pixel density for crisp printing
+    new QRCode(qrWrap, {
+      text: entry.content,
+      width: sizePx,
+      height: sizePx,
+      colorDark: '#000000',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+    cell.appendChild(qrWrap);
+    requestAnimationFrame(() => {
+      qrWrap.querySelectorAll('canvas, img').forEach((el) => {
+        el.style.width = '100%';
+        el.style.height = '100%';
+      });
+    });
+
+    if (entry.subtitle) {
+      const s = document.createElement('div');
+      s.className = 'collage-cell-subtitle';
+      s.textContent = entry.subtitle;
+      cell.appendChild(s);
+    }
+
+    if (collageShowCodeEl.checked) {
+      const c = document.createElement('div');
+      c.className = 'collage-cell-code';
+      c.textContent = entry.content;
+      cell.appendChild(c);
+    }
+
+    return cell;
+  }
+
+  function buildCollageSheets() {
+    collageSheetsContainer.innerHTML = '';
+    const entries = parseCollageEntries();
+
+    if (!entries.length) {
+      collagePrintBtn.disabled = true;
+      collageHint.textContent = 'Enter at least one label above to build the collage.';
+      return;
+    }
+
+    const { w: sheetWmm, h: sheetHmm } = getCollageSheetDisplayDims();
+    const { w: cellWmm, h: cellHmm } = getCollageCellDisplayDims();
+    const gapMm = parseFloat(collageGapEl.value) || 0;
+    const { cols, rows, perSheet } = computeCollageGrid(sheetWmm, sheetHmm, cellWmm, cellHmm, gapMm);
+
+    if (cellWmm > sheetWmm || cellHmm > sheetHmm) {
+      collagePrintBtn.disabled = true;
+      collageHint.textContent = 'The label size is larger than the sheet size — choose a smaller label or a bigger sheet.';
+      return;
+    }
+
+    const sheetCount = Math.ceil(entries.length / perSheet);
+    for (let s = 0; s < sheetCount; s++) {
+      const sheetEl = document.createElement('div');
+      sheetEl.className = 'collage-sheet';
+      sheetEl.style.width = sheetWmm + 'mm';
+      sheetEl.style.height = sheetHmm + 'mm';
+      sheetEl.style.gridTemplateColumns = `repeat(${cols}, ${cellWmm}mm)`;
+      sheetEl.style.gridTemplateRows = `repeat(${rows}, ${cellHmm}mm)`;
+      sheetEl.style.gap = gapMm + 'mm';
+      sheetEl.style.setProperty('--cell-min', Math.min(cellWmm, cellHmm) + 'mm');
+
+      entries.slice(s * perSheet, (s + 1) * perSheet).forEach((entry) => {
+        sheetEl.appendChild(buildCollageCell(entry, cellWmm, cellHmm));
+      });
+      collageSheetsContainer.appendChild(sheetEl);
+    }
+
+    collagePrintBtn.disabled = false;
+    collageHint.textContent = `${cols}×${rows} = ${perSheet} label(s) per sheet. ${entries.length} label(s) will use ${sheetCount} sheet(s).`;
+  }
+
+  // Re-applies size/orientation to the @page rule and rebuilds every sheet from scratch — cheap
+  // enough for a reasonable number of labels, and avoids partial-update bugs. Called on any
+  // control change and whenever the Collage tab becomes active.
+  function updateCollage() {
+    collageCellCustomRow.style.display = collageCellSizeEl.value === 'custom' ? 'flex' : 'none';
+    collageSheetCustomRow.style.display = collageSheetSizeEl.value === 'custom' ? 'flex' : 'none';
+    const { w, h } = getCollageSheetDisplayDims();
+    pageSizeStyle.textContent = `@page { size: ${w}mm ${h}mm; margin: 0; }`;
+    buildCollageSheets();
+  }
+
+  [collageEntriesEl, collageCellSizeEl, collageCellCustomWidthEl, collageCellCustomHeightEl,
+   collageSheetSizeEl, collageSheetCustomWidthEl, collageSheetCustomHeightEl,
+   collageGapEl, collageShowCodeEl].forEach((el) => {
+    el.addEventListener('input', updateCollage);
+    el.addEventListener('change', updateCollage);
+  });
+
+  collageGapEl.addEventListener('input', () => {
+    collageGapLabelEl.textContent = collageGapEl.value;
+  });
+
+  collageCellOrientationToggle.addEventListener('click', () => {
+    collageCellOrientation = collageCellOrientation === 'landscape' ? 'portrait' : 'landscape';
+    updateCollageCellOrientationUi();
+    updateCollage();
+  });
+  updateCollageCellOrientationUi();
+
+  collageSheetOrientationToggle.addEventListener('click', () => {
+    collageSheetOrientation = collageSheetOrientation === 'landscape' ? 'portrait' : 'landscape';
+    updateCollageSheetOrientationUi();
+    updateCollage();
+  });
+  updateCollageSheetOrientationUi();
+
+  collagePrintBtn.addEventListener('click', () => {
+    updateCollage(); // re-confirm @page and sheet contents right before printing
     window.print();
   });
 
