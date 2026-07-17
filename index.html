@@ -349,12 +349,13 @@
     min-height: 10mm;
   }
   /* Shown only while actively dragging/resizing something inside — a lightweight alignment
-     guide at the same spacing everything snaps to (GRID_MM in the script). */
+     guide. Drawn coarser (5mm) than the actual snap increment (GRID_MM in the script, 1mm) so
+     it stays a clean visual reference instead of a dense mesh of lines. */
   .snap-grid-active {
     background-image:
       linear-gradient(to right, rgba(37, 99, 235, 0.3) 1px, transparent 1px),
       linear-gradient(to bottom, rgba(37, 99, 235, 0.3) 1px, transparent 1px);
-    background-size: 2mm 2mm;
+    background-size: 5mm 5mm;
   }
   .label .qr-box {
     position: absolute;
@@ -1072,7 +1073,7 @@
 
   // Grid guide shown while dragging/resizing a QR (or the subtitle), and the increment
   // everything snaps to — both position and size — for easier, more consistent alignment.
-  const GRID_MM = 2;
+  const GRID_MM = 1;
   function snapToGrid(v) {
     return Math.round(v / GRID_MM) * GRID_MM;
   }
