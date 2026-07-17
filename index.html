@@ -1789,13 +1789,22 @@
   let pendingCollagePositions = [];
 
   // The default layout the first time a given QR is seen: with N codes on one label, each gets
-  // an equal slice of the cell's width, arranged in a centered row.
+  // an equal slice of the cell's width, arranged in a centered row. Sized against the cell's
+  // *available* area (mirroring the .collage-cell padding formula) rather than its raw
+  // dimensions, and with real headroom below that so there's always some room left to drag —
+  // otherwise a QR that exactly fills its canvas can't move at all in one or both directions.
+  // userSized/userPositioned start false and flip to true only once the user actually drags —
+  // an untouched QR keeps re-fitting itself if the cell size changes later; a touched one won't.
   function collageDefaultQrLayout(i, n, cellWmm, cellHmm) {
+    const cellMinMm = Math.min(cellWmm, cellHmm);
+    const paddingMm = clamp(cellMinMm * 0.06, 1, 4); // mirrors .collage-cell's CSS padding
+    const availableWmm = cellWmm - paddingMm * 2;
+    const availableHmm = cellHmm - paddingMm * 2;
     const qrGapMm = 1.5;
-    const maxByWidth = ((cellWmm - qrGapMm * (n - 1)) / n) * 0.9;
-    const maxByHeight = cellHmm * 0.6;
+    const maxByWidth = ((availableWmm - qrGapMm * (n - 1)) / n) * 0.8;
+    const maxByHeight = availableHmm * 0.5;
     const sizeMm = Math.max(4, Math.min(maxByWidth, maxByHeight));
-    return { x: (i - (n - 1) / 2) * (sizeMm + qrGapMm), y: 0, sizeMm };
+    return { x: (i - (n - 1) / 2) * (sizeMm + qrGapMm), y: 0, sizeMm, userSized: false, userPositioned: false };
   }
 
   function renderCollageQrContent(qrContentEl, content, sizeMm) {
@@ -1839,7 +1848,17 @@
     const n = entry.contents.length;
     entry.contents.forEach((content, i) => {
       const key = entryIndex + ':' + i;
-      if (!collageQrState[key]) collageQrState[key] = collageDefaultQrLayout(i, n, cellWmm, cellHmm);
+      if (!collageQrState[key]) {
+        collageQrState[key] = collageDefaultQrLayout(i, n, cellWmm, cellHmm);
+      } else {
+        // Keep re-fitting whichever of size/position the user hasn't manually touched, so it
+        // tracks the current cell dimensions instead of carrying over a stale value from
+        // whatever size/orientation was in effect the first time this slot was built.
+        const existing = collageQrState[key];
+        const fresh = collageDefaultQrLayout(i, n, cellWmm, cellHmm);
+        if (!existing.userSized) existing.sizeMm = fresh.sizeMm;
+        if (!existing.userPositioned) { existing.x = fresh.x; existing.y = fresh.y; }
+      }
       const state = collageQrState[key];
 
       const qrBox = document.createElement('div');
@@ -1865,6 +1884,7 @@
 
       qrBox.addEventListener('pointerdown', (e) => {
         if (e.target === handle || document.body.classList.contains('preview-mode')) return;
+        state.userPositioned = true; // stop auto-refitting its position once the user has placed it themselves
         collageQrDragState = { mode: 'move', canvasEl, state, qrBox, startX: e.clientX, startY: e.clientY, startOffsetX: state.x, startOffsetY: state.y };
         qrBox.setPointerCapture(e.pointerId);
         qrBox.classList.add('dragging');
@@ -1874,6 +1894,7 @@
 
       handle.addEventListener('pointerdown', (e) => {
         if (document.body.classList.contains('preview-mode')) return;
+        state.userSized = true; // stop auto-refitting its size once the user has resized it themselves
         collageQrDragState = { mode: 'resize', canvasEl, state, qrBox, qrContentEl, content, startX: e.clientX, startY: e.clientY, startSizeMm: state.sizeMm };
         handle.setPointerCapture(e.pointerId);
         canvasEl.classList.add('snap-grid-active');
